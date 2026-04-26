@@ -556,9 +556,7 @@ export default function Dashboard() {
                 {/* @ts-ignore : Ignore le bug de dictionnaire TypeScript de Corbado pour que Vercel accepte de déployer */}
                 <CorbadoAuth
                   onLoggedIn={() =>
-                    alert(
-                     "FaceID activé ! Vous pourrez l'utiliser lors de votre prochaine connexion."
-                   )
+                    alert("FaceID activé ! Vous pourrez l'utiliser lors de votre prochaine connexion.")
                  }
                 />
                 
