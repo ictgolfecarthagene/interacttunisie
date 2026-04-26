@@ -6,9 +6,6 @@ import { useRouter } from 'next/navigation';
 import { useCorbado, CorbadoAuth, CorbadoProvider } from '@corbado/react';
 import { Trophy, Users, FileText, Plus, CheckCircle, Loader2, Fingerprint, Medal, Trash2, Building2 } from 'lucide-react';
 
-// ==========================================
-// CONFIGURATION DES RÔLES ET ZONES
-// ==========================================
 const EXECUTIVE_ROLES = [
   'Coordinateur National',
   'Vice Coordinateur',
@@ -16,7 +13,7 @@ const EXECUTIVE_ROLES = [
   'Secrétaire National Adjoint',
   'Trésorier',
   'Chef de Protocole',
-  'BUREAU_EXECUTIF'
+  'BUREAU_EXECUTIF' 
 ];
 
 const ZONES = [
@@ -153,9 +150,10 @@ export default function Dashboard() {
     if (!error) {
       setNewUserName(''); setNewUserEmail(''); setNewUserRole('PENDING'); setNewUserZone('');
       await fetchAllUsers();
-      alert("Membre pré-enregistré avec succès !");
+      alert("Membre pré-enregistré avec succès ! Il pourra se connecter via FaceID ou en créant un mot de passe.");
     } else {
-      alert("Erreur: L'email existe déjà ou le RLS est activé.");
+      alert("Erreur de base de données. Cet email est peut-être déjà enregistré ou RLS est activé.");
+      console.error(error);
     }
     setIsUpdating(false);
   };
@@ -176,7 +174,9 @@ export default function Dashboard() {
         }
       }
     } else {
-        alert("Erreur de mise à jour. Vérifiez le RLS sur Supabase.");
+      // NEW: Explicit error alert added to prevent silent failures
+      console.error("Supabase Update Error:", error);
+      alert("Erreur de mise à jour! Avez-vous désactivé le RLS sur la table 'users' ?");
     }
     setIsUpdating(false);
   };
@@ -188,6 +188,9 @@ export default function Dashboard() {
     if (!error) {
       setAllUsers(allUsers.filter(u => u.id !== userId));
       if (userId === user.id) handleLogout(); 
+    } else {
+      console.error(error);
+      alert("Erreur lors de la suppression. Avez-vous désactivé le RLS ?");
     }
     setIsUpdating(false);
   };
@@ -197,6 +200,7 @@ export default function Dashboard() {
     setIsUpdating(true);
     const { error } = await supabase.from('visits').delete().eq('id', reportId);
     if (!error) fetchVisitsAndLeaderboard(user.role, user.zone);
+    else alert("Erreur lors de la suppression du rapport.");
     setIsUpdating(false);
   };
 
@@ -208,7 +212,10 @@ export default function Dashboard() {
     if (!error) {
       setNewClubName(''); setNewClubZone('');
       await fetchAllClubs();
-      alert("Club ajouté !");
+      alert("Club ajouté avec succès !");
+    } else {
+      console.error(error);
+      alert("Erreur lors de l'ajout. Avez-vous désactivé le RLS sur la table 'clubs' ?");
     }
     setIsUpdating(false);
   };
@@ -218,13 +225,15 @@ export default function Dashboard() {
     setIsUpdating(true);
     const { error } = await supabase.from('clubs').delete().eq('id', clubId);
     if (!error) await fetchAllClubs();
+    else alert("Erreur lors de la suppression du club.");
     setIsUpdating(false);
   };
 
   const handleSubmitReport = async () => {
     if (!selectedClub) return alert("Veuillez sélectionner un club.");
     const allScores = Object.values(scores).map(Number);
-    if (allScores.some(isNaN) || Object.values(scores).some(s => s === '')) return alert("Veuillez remplir toutes les notes.");
+    if (allScores.some(isNaN) || Object.values(scores).some(s => s === '')) return alert("Veuillez remplir toutes les notes sur 10.");
+    if (visitReason === 'Autre' && !specificReason.trim()) return alert("Veuillez spécifier la raison.");
 
     setIsSubmitting(true);
     const averageScore = allScores.reduce((a, b) => a + b, 0) / allScores.length;
@@ -238,9 +247,10 @@ export default function Dashboard() {
     const { error } = await supabase.from('visits').insert(payload);
     setIsSubmitting(false);
     
-    if (!error) {
-      alert("Rapport soumis ! 🎉");
-      setShowReportModal(false); setSelectedClub(''); setSpecificReason('');
+    if (error) alert(`Erreur: Données rejetées. Avez-vous désactivé le RLS ?`); 
+    else {
+      alert("Rapport soumis avec succès ! 🎉");
+      setShowReportModal(false); setSelectedClub(''); setSpecificReason(''); setVisitReason('Réunion Statutaire');
       setScores({ etat: '', effectif: '', organisation: '', deroulement: '', professionnalisme: '' });
       fetchVisitsAndLeaderboard(user.role, user.zone);
     }
@@ -256,6 +266,7 @@ export default function Dashboard() {
     ? leaderboard : leaderboard.filter(c => c.zone === selectedZoneFilter);
 
   if (isAppLoading) return <div className="min-h-screen flex items-center justify-center bg-gray-50 text-interact-blue font-bold animate-pulse">Chargement d'Interact Tunisie...</div>;
+  if (!user) return <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 text-red-500 font-bold p-4 text-center"><p>Session expirée ou non autorisée.</p><button onClick={() => router.push('/')} className="mt-6 px-6 py-3 bg-interact-blue text-white rounded-xl shadow-lg">Retour</button></div>;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 font-sans text-gray-800">
@@ -303,6 +314,7 @@ export default function Dashboard() {
                   {ZONES.map(zone => <option key={zone} value={zone}>{zone}</option>)}
                 </select>
               </div>
+              
               <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left">
                   <thead className="bg-white text-gray-500 font-bold border-b border-gray-200 uppercase tracking-wider text-xs">
@@ -324,8 +336,37 @@ export default function Dashboard() {
                         <td className="px-6 py-4 font-black text-interact-blue text-right text-lg">{club.average}</td>
                       </tr>
                     )) : (
-                      <tr><td colSpan={6} className="px-6 py-12 text-center text-gray-400">Aucun club évalué.</td></tr>
+                      <tr><td colSpan={6} className="px-6 py-12 text-center text-gray-400">Aucun club n'a encore été évalué dans cette zone.</td></tr>
                     )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden mt-8">
+              <div className="p-6 border-b border-gray-100 flex items-center gap-2">
+                <FileText className="text-gray-400" /> <h3 className="font-bold text-gray-800">Derniers rapports soumis</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-gray-50 text-gray-500 font-bold border-b border-gray-200 text-xs uppercase">
+                    <tr><th className="px-6 py-3">Date</th><th className="px-6 py-3">Club</th><th className="px-6 py-3">Motif</th><th className="px-6 py-3">Par</th><th className="px-6 py-3">Note</th><th className="px-6 py-3 text-right">Action</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {visits.map((v) => (
+                      <tr key={v.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-3 text-gray-500">{new Date(v.created_at).toLocaleDateString('fr-FR')}</td>
+                        <td className="px-6 py-3 font-bold">{v.club_name}</td>
+                        <td className="px-6 py-3 text-gray-600">{v.reason}</td>
+                        <td className="px-6 py-3">{v.visitor_name}</td>
+                        <td className="px-6 py-3 font-bold text-interact-blue">{v.score}</td>
+                        <td className="px-6 py-3 text-right">
+                          <button onClick={() => handleDeleteReport(v.id)} disabled={isUpdating} className="text-gray-400 hover:text-red-500 transition-colors p-2 rounded-full hover:bg-red-50">
+                            <Trash2 size={16} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -340,6 +381,7 @@ export default function Dashboard() {
               <form onSubmit={handleAddUser} className="flex flex-col md:flex-row gap-4">
                 <input type="text" value={newUserName} onChange={e => setNewUserName(e.target.value)} placeholder="Prénom et Nom" className="flex-1 border border-gray-300 rounded-xl p-3 outline-none focus:border-interact-blue" required />
                 <input type="email" value={newUserEmail} onChange={e => setNewUserEmail(e.target.value)} placeholder="Adresse email" className="flex-1 border border-gray-300 rounded-xl p-3 outline-none focus:border-interact-blue" required />
+                
                 <select value={newUserRole} onChange={e => setNewUserRole(e.target.value)} className="border border-gray-300 rounded-xl p-3 outline-none focus:border-interact-blue bg-white" required>
                   <option value="PENDING">Sans Rôle</option>
                   <option value="DRC">DRC</option>
@@ -347,13 +389,15 @@ export default function Dashboard() {
                     {EXECUTIVE_ROLES.map(role => <option key={role} value={role}>{role}</option>)}
                   </optgroup>
                 </select>
+
                 {newUserRole === 'DRC' && (
                   <select value={newUserZone} onChange={e => setNewUserZone(e.target.value)} className="border border-gray-300 rounded-xl p-3 outline-none focus:border-interact-blue bg-white" required>
-                    <option value="">Zone...</option>
+                    <option value="">Sélectionner une Zone...</option>
                     {ZONES.map(z => <option key={z} value={z}>{z}</option>)}
                   </select>
                 )}
-                <button type="submit" disabled={isUpdating} className="bg-interact-blue hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl shadow-md">Ajouter</button>
+
+                <button type="submit" disabled={isUpdating} className="bg-interact-blue hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl shadow-md transition-all">Ajouter</button>
               </form>
             </div>
 
@@ -372,7 +416,12 @@ export default function Dashboard() {
                         <td className="px-4 py-3 font-bold">{u.full_name}</td>
                         <td className="px-4 py-3 text-gray-500">{u.email}</td>
                         <td className="px-4 py-3">
-                          <select disabled={isUpdating} value={u.role || 'PENDING'} onChange={(e) => handleUpdateUser(u.id, 'role', e.target.value)} className="border border-gray-300 rounded-lg p-2 text-sm bg-white outline-none focus:border-interact-blue w-full max-w-xs">
+                          <select 
+                            disabled={isUpdating} 
+                            value={u.role || 'PENDING'} 
+                            onChange={(e) => handleUpdateUser(u.id, 'role', e.target.value)} 
+                            className="border border-gray-300 rounded-lg p-2 text-sm bg-white outline-none focus:border-interact-blue w-full max-w-xs"
+                          >
                             <option value="PENDING">En attente</option>
                             <option value="DRC">Directeur de Région (DRC)</option>
                             <optgroup label="Bureau Exécutif">
@@ -381,13 +430,20 @@ export default function Dashboard() {
                           </select>
                         </td>
                         <td className="px-4 py-3">
-                          <select disabled={isUpdating || u.role !== 'DRC'} value={u.zone || ''} onChange={(e) => handleUpdateUser(u.id, 'zone', e.target.value)} className={`border rounded-lg p-2 text-sm w-32 outline-none focus:border-interact-blue ${u.role !== 'DRC' ? 'bg-gray-100 text-gray-400' : 'bg-white'}`}>
+                          <select 
+                            disabled={isUpdating || u.role !== 'DRC'} 
+                            value={u.zone || ''} 
+                            onChange={(e) => handleUpdateUser(u.id, 'zone', e.target.value)} 
+                            className={`border rounded-lg p-2 text-sm w-32 outline-none focus:border-interact-blue ${u.role !== 'DRC' ? 'bg-gray-100 text-gray-400' : 'bg-white'}`}
+                          >
                             <option value="">-- Zone --</option>
                             {ZONES.map(z => <option key={z} value={z}>{z}</option>)}
                           </select>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <button onClick={() => handleDeleteUser(u.id, u.full_name)} disabled={isUpdating} className="text-red-500 hover:text-white border border-red-200 hover:bg-red-500 transition-colors px-3 py-1 rounded-lg text-xs font-bold">Supprimer</button>
+                          <button onClick={() => handleDeleteUser(u.id, u.full_name)} disabled={isUpdating} className="text-red-500 hover:text-white border border-red-200 hover:bg-red-500 transition-colors px-3 py-1 rounded-lg text-xs font-bold shadow-sm">
+                            Supprimer
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -403,14 +459,20 @@ export default function Dashboard() {
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden p-6">
               <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2 mb-4"><Plus className="text-green-500" /> Ajouter un Club</h2>
               <form onSubmit={handleAddClub} className="flex flex-col md:flex-row gap-4">
-                <input type="text" value={newClubName} onChange={e => setNewClubName(e.target.value)} placeholder="Nom du Club" className="flex-1 border border-gray-300 rounded-xl p-3 outline-none focus:border-interact-blue" required />
-                <select value={newClubZone} onChange={e => setNewClubZone(e.target.value)} className="w-full md:w-48 border border-gray-300 rounded-xl p-3 outline-none focus:border-interact-blue bg-white" required>
+                <input type="text" value={newClubName} onChange={e => setNewClubName(e.target.value)} placeholder="Nom du Club (ex: Interact Tunis)" className="flex-1 border border-gray-300 rounded-xl p-3 outline-none focus:border-interact-blue" required />
+                <select 
+                  value={newClubZone} 
+                  onChange={e => setNewClubZone(e.target.value)} 
+                  className="w-full md:w-48 border border-gray-300 rounded-xl p-3 outline-none focus:border-interact-blue bg-white" 
+                  required
+                >
                   <option value="">Zone...</option>
                   {ZONES.map(z => <option key={z} value={z}>{z}</option>)}
                 </select>
-                <button type="submit" disabled={isUpdating} className="bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-6 rounded-xl shadow-md">Ajouter</button>
+                <button type="submit" disabled={isUpdating} className="bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-6 rounded-xl shadow-md transition-all">Ajouter</button>
               </form>
             </div>
+
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
                <div className="p-6 border-b border-gray-100 bg-gray-50/50">
                 <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2"><Building2 className="text-interact-blue" /> Liste des Clubs</h2>
@@ -418,7 +480,7 @@ export default function Dashboard() {
               <div className="overflow-x-auto p-4">
                 <table className="w-full text-sm text-left border rounded-xl overflow-hidden">
                   <thead className="bg-gray-50 text-gray-600 border-b">
-                    <tr><th className="px-4 py-3">Nom</th><th className="px-4 py-3">Zone</th><th className="px-4 py-3 text-right">Action</th></tr>
+                    <tr><th className="px-4 py-3">Nom du Club</th><th className="px-4 py-3">Zone Actuelle</th><th className="px-4 py-3 text-right">Action</th></tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {allClubs.map((c) => (
@@ -426,10 +488,13 @@ export default function Dashboard() {
                         <td className="px-4 py-3 font-bold">{c.name}</td>
                         <td className="px-4 py-3"><span className="bg-blue-50 text-interact-blue border border-blue-100 px-2 py-1 rounded text-xs font-bold">{c.zone}</span></td>
                         <td className="px-4 py-3 text-right">
-                          <button onClick={() => handleDeleteClub(c.id, c.name)} disabled={isUpdating} className="text-red-500 hover:text-white border border-red-200 hover:bg-red-500 transition-colors px-3 py-1 rounded-lg text-xs font-bold">Retirer</button>
+                          <button onClick={() => handleDeleteClub(c.id, c.name)} disabled={isUpdating} className="text-red-500 hover:text-white border border-red-200 hover:bg-red-500 transition-colors px-3 py-1 rounded-lg text-xs font-bold shadow-sm">
+                            Retirer
+                          </button>
                         </td>
                       </tr>
                     ))}
+                    {allClubs.length === 0 && <tr><td colSpan={3} className="text-center p-6 text-gray-400">Aucun club trouvé.</td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -443,9 +508,34 @@ export default function Dashboard() {
               <div className="absolute left-0 top-0 bottom-0 w-2 bg-green-500"></div>
               <div>
                 <h2 className="text-3xl font-bold text-gray-800 mb-1">Zone : {user.zone}</h2>
-                <p className="text-gray-500 font-medium">Vous avez soumis <span className="text-interact-blue font-bold">{visits.length}</span> rapports.</p>
+                <p className="text-gray-500 font-medium">Vous avez soumis <span className="text-interact-blue font-bold">{visits.length}</span> rapports officiels.</p>
               </div>
-              <button onClick={() => setShowReportModal(true)} className="mt-4 md:mt-0 bg-interact-blue text-white px-6 py-3 rounded-xl shadow-lg font-bold flex items-center gap-2"><Plus size={20} /> Nouveau Rapport</button>
+              <button onClick={() => setShowReportModal(true)} className="mt-4 md:mt-0 bg-interact-blue text-white px-6 py-3 rounded-xl shadow-lg font-bold flex items-center gap-2 hover:bg-blue-700 transition-all"><Plus size={20} /> Nouveau Rapport</button>
+            </div>
+            
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+              <div className="p-5 border-b border-gray-100 bg-gray-50/50">
+                <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2"><CheckCircle className="text-green-500" size={20}/> Historique de mes visites</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-gray-50 text-gray-500 border-b border-gray-200 uppercase tracking-wider text-xs">
+                    <tr><th className="px-6 py-4">Date</th><th className="px-6 py-4">Club</th><th className="px-6 py-4">Motif</th><th className="px-6 py-4">Score</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {visits.length > 0 ? visits.map(v => (
+                      <tr key={v.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-6 py-4 text-gray-500 font-medium">{new Date(v.created_at).toLocaleDateString('fr-FR')}</td>
+                        <td className="px-6 py-4 font-bold text-gray-800">{v.club_name}</td>
+                        <td className="px-6 py-4 text-gray-600">{v.reason}</td>
+                        <td className="px-6 py-4 font-bold text-interact-blue">{v.score} / 10</td>
+                      </tr>
+                    )) : (
+                      <tr><td colSpan={4} className="p-8 text-center text-gray-400">Aucun rapport n'a été rédigé pour le moment.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
@@ -457,15 +547,18 @@ export default function Dashboard() {
             </div>
             <h2 className="text-3xl font-bold text-gray-800 mb-3">Enregistrer un Appareil</h2>
             <p className="text-gray-500 mb-8 max-w-md mx-auto leading-relaxed">
-              Associez le FaceID, TouchID ou Windows Hello de cet appareil à votre compte <b>{user.email}</b>.
+              Associez le FaceID, TouchID ou Windows Hello de cet appareil à votre compte <b>{user.email}</b>. Vous pourrez vous connecter instantanément la prochaine fois.
             </p>
             <div className="border border-gray-200 rounded-2xl p-6 bg-gray-50 shadow-inner flex justify-center items-center">
               <div className="w-full max-w-sm">
                 <p className="text-sm font-bold text-gray-400 mb-4 uppercase tracking-widest">Zone Biométrique Sécurisée</p>
-                {/* @ts-ignore */}
+                
+                {/* @ts-ignore : Ignore le bug de dictionnaire TypeScript de Corbado pour que Vercel accepte de déployer */}
                 <CorbadoProvider projectId={process.env.NEXT_PUBLIC_CORBADO_PROJECT_ID || "pro-6404309444468139215"}>
-                  <CorbadoAuth onLoggedIn={() => alert('FaceID activé !')} />
+                  <CorbadoAuth onLoggedIn={() => alert('FaceID activé ! Vous pourrez l\'utiliser lors de votre prochaine connexion.')} />
                 </CorbadoProvider>
+                
+              </div>
               </div>
             </div>
           </div>
@@ -475,32 +568,50 @@ export default function Dashboard() {
 
       {showReportModal && (
         <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-gray-100 flex justify-between items-center sticky top-0 bg-white/90 backdrop-blur">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto transform transition-all">
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center sticky top-0 bg-white/90 backdrop-blur z-10">
               <h3 className="text-xl font-bold text-gray-800">Évaluer un Club</h3>
-              <button onClick={() => setShowReportModal(false)} className="text-gray-400 hover:text-red-500">&times;</button>
+              <button onClick={() => setShowReportModal(false)} className="text-gray-400 hover:text-red-500 bg-gray-100 hover:bg-red-50 w-8 h-8 rounded-full flex items-center justify-center transition-colors">&times;</button>
             </div>
+            
             <div className="p-6 space-y-5">
-              <select value={selectedClub} onChange={(e) => setSelectedClub(e.target.value)} className="w-full border-gray-300 border p-3 rounded-xl bg-gray-50 outline-none focus:border-interact-blue">
-                <option value="">-- Choisir un club --</option>
-                {zoneClubs.map((club, i) => <option key={i} value={club}>{club}</option>)}
-              </select>
-              <select value={visitReason} onChange={(e) => setVisitReason(e.target.value)} className="w-full border-gray-300 border p-3 rounded-xl bg-gray-50 outline-none focus:border-interact-blue">
-                <option value="Réunion Statutaire">Réunion Statutaire</option>
-                <option value="Élections du Bureau Exécutif">Élections du Bureau Exécutif</option>
-                <option value="Autre">Autre</option>
-              </select>
-              {visitReason === 'Autre' && <input type="text" placeholder="Précisez..." value={specificReason} onChange={(e) => setSpecificReason(e.target.value)} className="w-full border-gray-300 border p-3 rounded-xl bg-white outline-none focus:border-interact-blue"/>}
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">Sélectionner le Club</label>
+                <select value={selectedClub} onChange={(e) => setSelectedClub(e.target.value)} className="w-full border-gray-300 border p-3 rounded-xl bg-gray-50 outline-none focus:border-interact-blue focus:ring-1 focus:ring-interact-blue transition-all">
+                  <option value="">-- Choisir un club --</option>
+                  {zoneClubs.map((club, i) => <option key={i} value={club}>{club}</option>)}
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">Raison de la visite</label>
+                <select value={visitReason} onChange={(e) => setVisitReason(e.target.value)} className="w-full border-gray-300 border p-3 rounded-xl bg-gray-50 outline-none focus:border-interact-blue focus:ring-1 focus:ring-interact-blue transition-all">
+                  <option value="Réunion Statutaire">Réunion Statutaire</option>
+                  <option value="Élections du Bureau Exécutif">Élections du Bureau Exécutif</option>
+                  <option value="Autre">Autre</option>
+                </select>
+                
+                {visitReason === 'Autre' && (
+                  <div className="mt-3 animate-in fade-in slide-in-from-top-2">
+                    <input type="text" placeholder="Veuillez préciser la raison..." value={specificReason} onChange={(e) => setSpecificReason(e.target.value)} className="w-full border-gray-300 border p-3 rounded-xl bg-white outline-none focus:border-interact-blue focus:ring-1 focus:ring-interact-blue transition-all"/>
+                  </div>
+                )}
+              </div>
+
               <div className="pt-5 border-t border-gray-100">
-                {[{ key: 'etat', label: 'État' }, { key: 'effectif', label: "Effectif" }, { key: 'organisation', label: "Organisation" }, { key: 'deroulement', label: "Déroulement" }, { key: 'professionnalisme', label: 'Prof.' }].map((critere, i) => (
+                <h4 className="font-bold text-gray-800 mb-4 bg-gray-100 p-2 rounded-lg text-center text-sm tracking-wide">NOTATION (SUR 10)</h4>
+                {[
+                  { key: 'etat', label: 'État du club' }, { key: 'effectif', label: "Effectif" }, { key: 'organisation', label: "Organisation" }, { key: 'deroulement', label: "Déroulement" }, { key: 'professionnalisme', label: 'Professionnalisme' }
+                ].map((critere, i) => (
                   <div key={i} className="flex justify-between items-center mb-4">
                     <label className="text-sm font-medium text-gray-600">{critere.label}</label>
-                    <input type="number" min="0" max="10" value={(scores as any)[critere.key]} onChange={(e) => setScores({...scores, [critere.key]: e.target.value})} className="w-20 border-gray-300 border rounded-lg p-2 text-center font-bold text-interact-blue" placeholder="/ 10" />
+                    <input type="number" min="0" max="10" value={(scores as any)[critere.key]} onChange={(e) => setScores({...scores, [critere.key]: e.target.value})} className="w-20 border-gray-300 border rounded-lg p-2 text-center font-bold text-interact-blue outline-none focus:border-interact-blue focus:ring-1 focus:ring-interact-blue shadow-sm" placeholder="/ 10" />
                   </div>
                 ))}
               </div>
-              <button onClick={handleSubmitReport} disabled={isSubmitting} className="w-full bg-interact-blue text-white py-4 rounded-xl font-bold hover:bg-blue-700 disabled:opacity-70">
-                {isSubmitting ? 'Enregistrement...' : 'Soumettre le rapport'}
+              
+              <button onClick={handleSubmitReport} disabled={isSubmitting} className="w-full bg-interact-blue text-white py-4 rounded-xl font-bold hover:bg-blue-700 transition-colors flex justify-center items-center gap-2 mt-2 shadow-lg disabled:opacity-70">
+                {isSubmitting ? <><Loader2 className="animate-spin" size={20} /> Enregistrement...</> : 'Soumettre le rapport'}
               </button>
             </div>
           </div>
