@@ -554,9 +554,13 @@ export default function Dashboard() {
                 <p className="text-sm font-bold text-gray-400 mb-4 uppercase tracking-widest">Zone Biométrique Sécurisée</p>
                 
                 {/* @ts-ignore : Ignore le bug de dictionnaire TypeScript de Corbado pour que Vercel accepte de déployer */}
-                <CorbadoProvider projectId={process.env.NEXT_PUBLIC_CORBADO_PROJECT_ID || "pro-6404309444468139215"}>
-                  <CorbadoAuth onLoggedIn={() => alert('FaceID activé ! Vous pourrez l\'utiliser lors de votre prochaine connexion.')} />
-                </CorbadoProvider>
+                <CorbadoAuth
+                  onLoggedIn={() =>
+                    alert(
+                     "FaceID activé ! Vous pourrez l'utiliser lors de votre prochaine connexion."
+                   )
+                 }
+                />
                 
               </div>
               </div>
