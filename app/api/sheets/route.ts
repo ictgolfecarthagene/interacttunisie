@@ -1,4 +1,7 @@
 import { NextResponse } from 'next/server';
+// Force Vercel Update
+import { NextResponse } from 'next/server';
+// ... le reste de ton code ...
 
 export async function POST(req: Request) {
   try {
