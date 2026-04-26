@@ -1,0 +1,13 @@
+@import "tailwindcss";
+
+@theme {
+  /* Official Interact Tunisie Brand Colors */
+  --color-interact-blue: #0072CE;
+  --color-interact-light: #E6F0FA;
+}
+
+/* Base styles for a clean light theme */
+body {
+  background-color: #f9fafb;
+  color: #111827;
+}
