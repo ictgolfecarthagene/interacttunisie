@@ -6,6 +6,9 @@ import { useRouter } from 'next/navigation';
 import { useCorbado, CorbadoAuth, CorbadoProvider } from '@corbado/react';
 import { Trophy, Users, FileText, Plus, CheckCircle, Loader2, Fingerprint, Medal, Trash2, Building2 } from 'lucide-react';
 
+// ==========================================
+// CONFIGURATION DES RÔLES ET ZONES
+// ==========================================
 const EXECUTIVE_ROLES = [
   'Coordinateur National',
   'Vice Coordinateur',
@@ -13,7 +16,7 @@ const EXECUTIVE_ROLES = [
   'Secrétaire National Adjoint',
   'Trésorier',
   'Chef de Protocole',
-  'BUREAU_EXECUTIF' 
+  'BUREAU_EXECUTIF'
 ];
 
 const ZONES = [
@@ -47,6 +50,7 @@ export default function Dashboard() {
   const [newClubName, setNewClubName] = useState('');
   const [newClubZone, setNewClubZone] = useState('');
 
+  // NOUVEAU : États pour la création de compte par l'exécutif
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserRole, setNewUserRole] = useState('PENDING');
@@ -134,6 +138,9 @@ export default function Dashboard() {
     return () => { isMounted = false; clearTimeout(failsafeTimer); };
   }, [isAuthenticated, corbadoUser, corbadoLoading, router]);
 
+  // ==========================================
+  // FONCTIONS DE GESTION DES UTILISATEURS
+  // ==========================================
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUserName || !newUserEmail) return alert("Veuillez remplir le nom et l'email.");
@@ -174,7 +181,6 @@ export default function Dashboard() {
         }
       }
     } else {
-      // NEW: Explicit error alert added to prevent silent failures
       console.error("Supabase Update Error:", error);
       alert("Erreur de mise à jour! Avez-vous désactivé le RLS sur la table 'users' ?");
     }
@@ -195,6 +201,9 @@ export default function Dashboard() {
     setIsUpdating(false);
   };
 
+  // ==========================================
+  // FONCTIONS DE GESTION DES CLUBS & RAPPORTS
+  // ==========================================
   const handleDeleteReport = async (reportId: string) => {
     if (!window.confirm(`Voulez-vous vraiment supprimer ce rapport ?`)) return;
     setIsUpdating(true);
@@ -552,15 +561,10 @@ export default function Dashboard() {
             <div className="border border-gray-200 rounded-2xl p-6 bg-gray-50 shadow-inner flex justify-center items-center">
               <div className="w-full max-w-sm">
                 <p className="text-sm font-bold text-gray-400 mb-4 uppercase tracking-widest">Zone Biométrique Sécurisée</p>
-                
                 {/* @ts-ignore : Ignore le bug de dictionnaire TypeScript de Corbado pour que Vercel accepte de déployer */}
-                <CorbadoAuth
-                  onLoggedIn={() =>
-                    alert("FaceID activé ! Vous pourrez l'utiliser lors de votre prochaine connexion.")
-                 }
-                />
-                
-              </div>
+                <CorbadoProvider projectId={process.env.NEXT_PUBLIC_CORBADO_PROJECT_ID || "pro-6404309444468139215"}>
+                  <CorbadoAuth onLoggedIn={() => alert('FaceID activé ! Vous pourrez l\'utiliser lors de votre prochaine connexion.')} />
+                </CorbadoProvider>
               </div>
             </div>
           </div>
