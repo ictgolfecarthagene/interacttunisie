@@ -1,17 +1,14 @@
 'use client';
 
 import { CorbadoProvider } from '@corbado/react';
-import type { ReactNode } from 'react';
 
-const CorbadoProviderFixed = CorbadoProvider as unknown as React.FC<{
-  projectId: string;
-  children?: ReactNode;
-}>;
-
-export default function Providers({ children }: { children: ReactNode }) {
+export default function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <CorbadoProviderFixed projectId="pro-6404309444468139215">
+    <CorbadoProvider
+      projectId={process.env.NEXT_PUBLIC_CORBADO_PROJECT_ID || "pro-6404309444468139215"}
+      darkMode="off"
+    >
       {children}
-    </CorbadoProviderFixed>
+    </CorbadoProvider>
   );
 }
