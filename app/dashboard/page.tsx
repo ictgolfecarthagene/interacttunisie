@@ -113,7 +113,7 @@ export default function Dashboard() {
     if (!error) {
       setNewUserName(''); setNewUserEmail(''); setNewUserRole('PENDING'); setNewUserZone('');
       await fetchAllUsers(); alert("Membre pré-enregistré avec succès !");
-    } else alert("Erreur: L'email existe déjà ou problème de RLS.");
+    } else alert("Erreur de base de données. Cet email est peut-être déjà enregistré.");
     setIsUpdating(false);
   };
 
@@ -460,9 +460,12 @@ export default function Dashboard() {
             </div>
             
             <div className="p-6 md:p-8 space-y-6">
-              <select value={selectedClub} onChange={(e) => setSelectedClub(e.target.value)} className="w-full border-2 border-gray-200 p-4 rounded-xl bg-gray-50 focus:border-interact-blue font-bold text-gray-800">
+              <select value={selectedClub} onChange={(e) => setSelectedClub(e.target.value)} className="w-full border-2 border-gray-200 p-4 rounded-xl bg-gray-50 outline-none focus:border-interact-blue focus:ring-4 focus:ring-blue-50 font-bold text-gray-800 transition-all cursor-pointer">
                 <option value="">-- Choisir un club --</option>
-                {zoneClubs.map((club, i) => <option key={i} value={club}>{club}</option>)}
+                {isExecutive 
+                  ? allClubs.map((club) => <option key={club.id} value={club.name}>{club.name} ({club.zone})</option>)
+                  : zoneClubs.map((club, i) => <option key={i} value={club}>{club}</option>)
+                }
               </select>
               
               <select value={visitReason} onChange={(e) => setVisitReason(e.target.value)} className="w-full border-2 border-gray-200 p-4 rounded-xl bg-gray-50 focus:border-interact-blue font-bold text-gray-800">
