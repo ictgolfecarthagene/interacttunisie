@@ -14,7 +14,7 @@ export default function Dashboard() {
   const [user, setUser] = useState<any>(null);
   const [isAppLoading, setIsAppLoading] = useState(true);
   
-  const [zoneClubs, setZoneClubs] = useState<string[]>([]); 
+  // Correction: Plus besoin de zoneClubs, on utilise allClubs partout intelligemment
   const [allClubs, setAllClubs] = useState<any[]>([]); 
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [visits, setVisits] = useState<any[]>([]); 
@@ -89,13 +89,12 @@ export default function Dashboard() {
       if (userData && isMounted) {
         setUser(userData);
         await fetchVisitsAndLeaderboard(userData.role, userData.zone);
-        if (userData.role === 'DRC') {
-          const { data: clubsData } = await supabase.from('clubs').select('name').ilike('zone', userData.zone); 
-          if (clubsData) setZoneClubs(clubsData.map(club => club.name));
-        }
+        
+        // CORRECTION MAJEURE: On charge TOUS les clubs pour tout le monde instantanément
+        await fetchAllClubs(); 
+        
         if (EXECUTIVE_ROLES.includes(userData.role)) {
           await fetchAllUsers();
-          await fetchAllClubs();
         }
       }
       if (isMounted) { setIsAppLoading(false); clearTimeout(failsafeTimer); }
@@ -158,7 +157,7 @@ export default function Dashboard() {
     const { error } = await supabase.from('clubs').insert({ name: newClubName, zone: newClubZone });
     if (!error) {
       setNewClubName(''); setNewClubZone(''); await fetchAllClubs(); alert("Club ajouté avec succès !");
-    }
+    } else alert("Erreur lors de l'ajout. Vérifiez votre base de données.");
     setIsUpdating(false);
   };
 
@@ -179,8 +178,12 @@ export default function Dashboard() {
     const averageScore = allScores.reduce((a, b) => a + b, 0) / allScores.length;
     const finalReason = visitReason === 'Autre' ? specificReason : visitReason;
 
+    // Détection de la zone du club sélectionné
+    const currentClub = allClubs.find(c => c.name === selectedClub);
+    const reportZone = currentClub ? currentClub.zone : (user?.zone || 'Zone Non Définie');
+
     const payload = {
-      club_name: selectedClub, zone: user?.zone || 'Zone Non Définie', visitor_name: user?.full_name || 'Utilisateur', 
+      club_name: selectedClub, zone: reportZone, visitor_name: user?.full_name || 'Utilisateur', 
       reason: finalReason, score: Number(averageScore.toFixed(2)), date: new Date().toLocaleDateString('fr-FR')
     };
 
@@ -256,10 +259,16 @@ export default function Dashboard() {
                 <div>
                   <h2 className="text-2xl font-extrabold text-gray-900 flex items-center gap-3"><Trophy className="text-yellow-500" size={28} /> Classement National</h2>
                 </div>
-                <select value={selectedZoneFilter} onChange={(e) => setSelectedZoneFilter(e.target.value)} className="border-gray-200 rounded-xl text-gray-700 py-3 px-4 border-2 outline-none font-bold focus:border-interact-blue focus:ring-4 cursor-pointer">
-                  <option value="Toutes les zones">🌍 Toutes les zones</option>
-                  {ZONES.map(zone => <option key={zone} value={zone}>📍 {zone}</option>)}
-                </select>
+                <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+                  {/* BOUTON TEST AJOUTÉ POUR L'EXÉCUTIF */}
+                  <button onClick={() => setShowReportModal(true)} className="bg-gray-900 hover:bg-black text-white px-5 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-md transition-all">
+                    <Plus size={20} /> Rapport Rapide
+                  </button>
+                  <select value={selectedZoneFilter} onChange={(e) => setSelectedZoneFilter(e.target.value)} className="border-gray-200 rounded-xl text-gray-700 py-3 px-4 border-2 outline-none font-bold focus:border-interact-blue focus:ring-4 cursor-pointer">
+                    <option value="Toutes les zones">🌍 Toutes les zones</option>
+                    {ZONES.map(zone => <option key={zone} value={zone}>📍 {zone}</option>)}
+                  </select>
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left">
@@ -460,11 +469,13 @@ export default function Dashboard() {
             </div>
             
             <div className="p-6 md:p-8 space-y-6">
+              
+              {/* LA LISTE DÉROULANTE INTELLIGENTE */}
               <select value={selectedClub} onChange={(e) => setSelectedClub(e.target.value)} className="w-full border-2 border-gray-200 p-4 rounded-xl bg-gray-50 outline-none focus:border-interact-blue focus:ring-4 focus:ring-blue-50 font-bold text-gray-800 transition-all cursor-pointer">
                 <option value="">-- Choisir un club --</option>
                 {isExecutive 
                   ? allClubs.map((club) => <option key={club.id} value={club.name}>{club.name} ({club.zone})</option>)
-                  : zoneClubs.map((club, i) => <option key={i} value={club}>{club}</option>)
+                  : allClubs.filter(c => c.zone === user?.zone).map((club) => <option key={club.id} value={club.name}>{club.name}</option>)
                 }
               </select>
               
