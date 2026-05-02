@@ -4,7 +4,8 @@ import { supabase } from '../../lib/supabase';
 import { useRouter } from 'next/navigation';
 
 import { useCorbado, CorbadoAuth, CorbadoProvider } from '@corbado/react';
-import { Trophy, Users, FileText, Plus, CheckCircle, Loader2, Fingerprint, Trash2, Building2, LogOut, MessageSquare, Clock, Map as MapIcon, MapPin, ChevronRight, Activity } from 'lucide-react';
+import { Trophy, Users, FileText, Plus, CheckCircle, Loader2, Fingerprint, Trash2, Building2, LogOut, MessageSquare, Clock, Map as MapIcon, MapPin, ChevronRight, Activity, Download } from 'lucide-react';
+import jsPDF from 'jspdf';
 
 const COMITE_NATIONAL_ROLES = ['Coordinateur National', 'Vice Coordinateur', 'Secrétaire National', 'Secrétaire National Adjoint', 'Trésorier', 'Chef de Protocole'];
 const ZONES = ['Nord 1', 'Nord 2', 'Nord 3', 'Nord 4', 'Nord 5', 'Nord 6', 'Nord 7', 'Centre', 'Sud'];
@@ -113,6 +114,76 @@ export default function Dashboard() {
     fetchDashboardData();
     return () => { isMounted = false; clearTimeout(failsafeTimer); };
   }, [isAuthenticated, corbadoUser, corbadoLoading, router]);
+
+  // --- PDF GENERATOR FUNCTION ---
+  const downloadReceipt = (visit: any) => {
+    const doc = new jsPDF();
+    
+    // Attempt to add the Logo (must be named logo.png inside the public folder)
+    const logo = new Image();
+    logo.src = '/logo.png'; 
+    try {
+        doc.addImage(logo, 'PNG', 20, 20, 30, 30);
+    } catch (e) {
+        console.warn("Logo non trouvé ou non chargé à temps.");
+    }
+
+    // Header Formatting
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(22);
+    doc.setTextColor(0, 66, 137); // Interact Blue
+    doc.text("RAPPORT OFFICIEL DE VISITE", 60, 35);
+    
+    doc.setFontSize(10);
+    doc.setTextColor(150, 150, 150);
+    doc.text("Interact Tunisie - Comité National", 60, 42);
+
+    // Separator line
+    doc.setLineWidth(0.5);
+    doc.setDrawColor(200, 200, 200);
+    doc.line(20, 55, 190, 55);
+
+    // Visit Details
+    doc.setFontSize(12);
+    doc.setTextColor(50, 50, 50);
+    
+    doc.setFont("helvetica", "bold");
+    doc.text("Club Évalué:", 20, 70);
+    doc.setFont("helvetica", "normal");
+    doc.text(visit.club_name, 60, 70);
+
+    doc.setFont("helvetica", "bold");
+    doc.text("Zone:", 20, 80);
+    doc.setFont("helvetica", "normal");
+    doc.text(visit.zone || 'N/A', 60, 80);
+
+    doc.setFont("helvetica", "bold");
+    doc.text("Date:", 20, 90);
+    doc.setFont("helvetica", "normal");
+    doc.text(new Date(visit.created_at).toLocaleDateString('fr-FR'), 60, 90);
+
+    doc.setFont("helvetica", "bold");
+    doc.text("Visiteur (DRC):", 20, 100);
+    doc.setFont("helvetica", "normal");
+    doc.text(visit.visitor_name, 60, 100);
+
+    doc.setFont("helvetica", "bold");
+    doc.text("Motif:", 20, 110);
+    doc.setFont("helvetica", "normal");
+    doc.text(visit.reason, 60, 110);
+
+    // Score Box
+    doc.setFillColor(240, 248, 255); // Light blue
+    doc.rect(20, 130, 170, 30, 'F');
+    
+    doc.setFontSize(16);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(0, 66, 137);
+    doc.text(`Note Globale attribuée : ${visit.score} / 10`, 30, 148);
+
+    // Save File
+    doc.save(`Interact_Rapport_${visit.club_name.replace(/\s+/g, '_')}.pdf`);
+  };
 
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -303,7 +374,7 @@ export default function Dashboard() {
               <button onClick={() => setActiveTab('securite')} className={`flex items-center whitespace-nowrap gap-2 py-2.5 px-6 rounded-xl font-bold text-sm transition-all duration-200 ${activeTab === 'securite' ? 'bg-interact-blue text-white shadow-md transform scale-[1.02]' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}><Fingerprint size={18} /> FaceID</button>
             </div>
 
-            {/* ======================= INTERACTIVE MAP (NEW) ======================= */}
+            {/* ======================= INTERACTIVE MAP ======================= */}
             {isComiteNational && activeTab === 'map' && (
               <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="bg-gradient-to-br from-gray-900 to-interact-blue rounded-3xl shadow-lg p-8 text-white relative overflow-hidden">
@@ -311,7 +382,6 @@ export default function Dashboard() {
                     <h2 className="text-3xl font-extrabold mb-2">Explorateur de Zones</h2>
                     <p className="text-blue-100 mb-8 max-w-xl">Sélectionnez une zone sur le territoire tunisien pour voir les clubs affectés, puis cliquez sur un club pour voir l'historique complet de ses visites.</p>
                     
-                    {/* Zone Grid */}
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 relative z-10">
                         {ZONES.map(z => {
                             const clubsInZoneCount = allClubs.filter(c => c.zone === z).length;
@@ -329,7 +399,6 @@ export default function Dashboard() {
                     </div>
                 </div>
 
-                {/* Sub-section: Clubs in Selected Zone */}
                 {selectedMapZone && (
                     <div className="bg-white rounded-3xl shadow-sm border border-gray-200 p-8 animate-in slide-in-from-top-4 duration-300">
                         <h3 className="text-xl font-extrabold text-gray-900 mb-6 flex items-center gap-2">Clubs dans la zone : <span className="text-interact-blue">{selectedMapZone}</span></h3>
@@ -349,7 +418,6 @@ export default function Dashboard() {
                     </div>
                 )}
 
-                {/* Sub-section: Visits for Selected Club */}
                 {selectedMapClub && (
                     <div className="bg-white rounded-3xl shadow-sm border border-gray-200 p-8 animate-in slide-in-from-top-4 duration-300">
                         <h3 className="text-xl font-extrabold text-gray-900 mb-6 flex items-center gap-2"><Activity className="text-green-500" /> Historique : {selectedMapClub}</h3>
@@ -362,8 +430,13 @@ export default function Dashboard() {
                                             <p className="font-bold text-gray-900">{visit.reason}</p>
                                             <p className="text-sm text-gray-600 mt-1">Visité par : <b>{visit.visitor_name}</b></p>
                                         </div>
-                                        <div className="bg-white border-2 border-interact-blue/20 text-interact-blue font-black text-xl px-6 py-3 rounded-xl shadow-sm text-center">
-                                            {visit.score} <span className="text-sm text-gray-400">/10</span>
+                                        <div className="flex items-center gap-4">
+                                            <div className="bg-white border-2 border-interact-blue/20 text-interact-blue font-black text-xl px-6 py-3 rounded-xl shadow-sm text-center">
+                                                {visit.score} <span className="text-sm text-gray-400">/10</span>
+                                            </div>
+                                            <button onClick={() => downloadReceipt(visit)} className="bg-gray-100 hover:bg-gray-200 text-gray-700 p-3 rounded-xl font-bold transition-colors flex items-center gap-2">
+                                                <Download size={20} />
+                                            </button>
                                         </div>
                                     </div>
                                 ))
@@ -395,7 +468,7 @@ export default function Dashboard() {
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm text-left">
                       <thead className="bg-gray-50/50 text-gray-400 font-bold border-b border-gray-100 uppercase tracking-widest text-xs">
-                        <tr><th className="px-8 py-5">Date</th><th className="px-8 py-5">Motif</th><th className="px-8 py-5">Visité par (DRC)</th><th className="px-8 py-5 text-right">Feedback Privé</th></tr>
+                        <tr><th className="px-8 py-5">Date</th><th className="px-8 py-5">Motif</th><th className="px-8 py-5">Visité par (DRC)</th><th className="px-8 py-5 text-right">Actions</th></tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
                         {visits.length > 0 ? visits.map(v => (
@@ -403,8 +476,11 @@ export default function Dashboard() {
                             <td className="px-8 py-5 text-gray-500 font-medium">{new Date(v.created_at).toLocaleDateString('fr-FR')}</td>
                             <td className="px-8 py-5 text-gray-800 font-medium">{v.reason}</td>
                             <td className="px-8 py-5 font-bold text-gray-900 text-base">{v.visitor_name}</td>
-                            <td className="px-8 py-5 text-right">
-                               <button onClick={() => {setSelectedVisitForFeedback(v); setShowFeedbackModal(true);}} className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-2 ml-auto transition-colors">
+                            <td className="px-8 py-5 text-right flex justify-end gap-2">
+                               <button onClick={() => downloadReceipt(v)} title="Télécharger le PDF" className="bg-gray-100 hover:bg-gray-200 text-gray-700 p-2 rounded-lg font-bold transition-colors">
+                                 <Download size={18} />
+                               </button>
+                               <button onClick={() => {setSelectedVisitForFeedback(v); setShowFeedbackModal(true);}} className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-2 transition-colors">
                                  <MessageSquare size={14} /> Évaluer le DRC
                                </button>
                             </td>
@@ -467,7 +543,7 @@ export default function Dashboard() {
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm text-left">
                       <thead className="bg-gray-50/50 text-gray-400 font-bold border-b uppercase tracking-widest text-xs">
-                        <tr><th className="px-8 py-4">Date</th><th className="px-8 py-4">Club</th><th className="px-8 py-4">Motif</th><th className="px-8 py-4">Par</th><th className="px-8 py-4">Note</th><th className="px-8 py-4 text-right">Action</th></tr>
+                        <tr><th className="px-8 py-4">Date</th><th className="px-8 py-4">Club</th><th className="px-8 py-4">Motif</th><th className="px-8 py-4">Par</th><th className="px-8 py-4">Note</th><th className="px-8 py-4 text-right">Actions</th></tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
                         {visits.map((v) => (
@@ -477,7 +553,8 @@ export default function Dashboard() {
                             <td className="px-8 py-4 text-gray-600">{v.reason}</td>
                             <td className="px-8 py-4 font-medium text-gray-700">{v.visitor_name}</td>
                             <td className="px-8 py-4 font-black text-interact-blue">{v.score}</td>
-                            <td className="px-8 py-4 text-right">
+                            <td className="px-8 py-4 text-right flex justify-end gap-2">
+                              <button onClick={() => downloadReceipt(v)} title="Télécharger le PDF" className="text-gray-500 hover:text-interact-blue p-2 rounded-xl"><Download size={18} /></button>
                               <button onClick={() => handleDeleteReport(v.id)} disabled={isUpdating} className="text-gray-400 hover:text-red-600 p-2 rounded-xl"><Trash2 size={18} /></button>
                             </td>
                           </tr>
@@ -489,7 +566,7 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* ======================= USER MANAGEMENT ======================= */}
+            {/* ======================= USER MANAGEMENT (WITH FIX FOR REPRESENTATIVE CLUBS) ======================= */}
             {isComiteNational && activeTab === 'users' && (
               <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="bg-gradient-to-br from-white to-gray-50 rounded-3xl shadow-sm border border-gray-200 overflow-hidden p-6 md:p-8">
@@ -547,14 +624,24 @@ export default function Dashboard() {
                                 </select>
                             </td>
                             <td className="px-8 py-4">
-                               {u.role === 'DRC' ? (
-                                    <select disabled={isUpdating} value={u.zone || ''} onChange={(e) => handleUpdateUser(u.id, 'zone', e.target.value)} className="border-2 rounded-xl p-2.5 w-36 bg-white border-gray-200">
+                               {u.role === 'DRC' && (
+                                    <select disabled={isUpdating} value={u.zone || ''} onChange={(e) => handleUpdateUser(u.id, 'zone', e.target.value)} className="border-2 rounded-xl p-2.5 w-36 bg-white border-gray-200 cursor-pointer">
                                         <option value="">-- Zone --</option>
                                         {ZONES.map(z => <option key={z} value={z}>{z}</option>)}
                                     </select>
-                               ) : u.role === 'Représentant Club' ? (
-                                    <span className="bg-green-50 text-green-700 px-3 py-1.5 rounded-md font-bold text-xs border border-green-200">{u.club || "Aucun Club"}</span>
-                               ) : <span className="text-gray-400 text-xs">N/A</span>}
+                               )}
+
+                               {/* FIX FOR THE "AUCUN CLUB" DROPDOWN ISSUE */}
+                               {u.role === 'Représentant Club' && (
+                                    <select disabled={isUpdating} value={u.club || ''} onChange={(e) => handleUpdateUser(u.id, 'club', e.target.value)} className="border-2 rounded-xl p-2.5 w-full max-w-xs bg-white border-gray-200 cursor-pointer text-xs font-bold text-green-700">
+                                        <option value="">-- Choisir Club... --</option>
+                                        {allClubs.map(c => (
+                                            <option key={c.id} value={c.name}>{c.name} ({c.zone})</option>
+                                        ))}
+                                    </select>
+                               )}
+
+                               {!['DRC', 'Représentant Club'].includes(u.role) && <span className="text-gray-400 text-xs">N/A</span>}
                             </td>
                             <td className="px-8 py-4 text-right">
                               <button onClick={() => handleDeleteUser(u.id, u.full_name)} disabled={isUpdating} className="text-red-500 border-2 border-red-100 px-4 py-2 rounded-xl text-xs font-bold">Retirer</button>
