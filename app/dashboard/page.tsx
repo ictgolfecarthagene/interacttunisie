@@ -4,7 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { useRouter } from 'next/navigation';
 
 import { useCorbado, CorbadoAuth, CorbadoProvider } from '@corbado/react';
-import { Trophy, Users, FileText, Plus, CheckCircle, Loader2, Fingerprint, Trash2, Building2, LogOut, MessageSquare, Clock, Map as MapIcon, MapPin, ChevronRight, Activity, Download, Bell, Calendar as CalendarIcon, Star, Medal } from 'lucide-react';
+import { Trophy, Users, FileText, Plus, CheckCircle, Loader2, Fingerprint, Trash2, Building2, LogOut, MessageSquare, Clock, Map as MapIcon, MapPin, ChevronRight, ChevronLeft, Activity, Download, Bell, Calendar as CalendarIcon, Star, Medal, ExternalLink } from 'lucide-react';
 import jsPDF from 'jspdf';
 
 const COMITE_NATIONAL_ROLES = ['Coordinateur National', 'Vice Coordinateur', 'Secrétaire National', 'Secrétaire National Adjoint', 'Trésorier', 'Chef de Protocole'];
@@ -19,7 +19,7 @@ export default function Dashboard() {
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [visits, setVisits] = useState<any[]>([]); 
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
-  const [drcLeaderboard, setDrcLeaderboard] = useState<any[]>([]); // NEW: DRC Leaderboard
+  const [drcLeaderboard, setDrcLeaderboard] = useState<any[]>([]);
   
   const [events, setEvents] = useState<any[]>([]);
   const [feedbacks, setFeedbacks] = useState<any[]>([]);
@@ -57,14 +57,17 @@ export default function Dashboard() {
   const [newUserZone, setNewUserZone] = useState('');
   const [newUserClub, setNewUserClub] = useState('');
 
+  // --- CALENDAR STATES ---
+  const [currentMonthDate, setCurrentMonthDate] = useState(new Date());
+  const [showEventModal, setShowEventModal] = useState(false);
   const [newEventDate, setNewEventDate] = useState('');
   const [newEventPlace, setNewEventPlace] = useState('');
+  const [newEventMapLink, setNewEventMapLink] = useState('');
   const [newEventDesc, setNewEventDesc] = useState('');
 
   const router = useRouter();
   const isComiteNational = user ? COMITE_NATIONAL_ROLES.includes(user.role) : false;
 
-  // --- REAL SYSTEM NOTIFICATIONS ---
   const requestNotificationPermission = () => {
     if ("Notification" in window && Notification.permission !== "granted" && Notification.permission !== "denied") {
       Notification.requestPermission();
@@ -78,7 +81,6 @@ export default function Dashboard() {
   };
 
   const fetchData = async (userData: any) => {
-    // 1. Fetch Visits & Compute Leaderboards
     let query = supabase.from('visits').select('*').order('created_at', { ascending: false });
     if (userData.role === 'DRC') query = query.eq('zone', userData.zone);
     if (userData.role === 'Représentant Club') query = query.eq('club_name', userData.club);
@@ -86,18 +88,14 @@ export default function Dashboard() {
     const { data: visitsData } = await query;
     if (visitsData) {
       setVisits(visitsData);
-      
-      // Club Leaderboard
       const clubStats: Record<string, any> = {};
-      const drcStats: Record<string, number> = {}; // DRC Leaderboard
+      const drcStats: Record<string, number> = {}; 
 
       visitsData.forEach(visit => {
-        // Club Stats
         if (!clubStats[visit.club_name]) clubStats[visit.club_name] = { club_name: visit.club_name, zone: visit.zone, totalScore: 0, count: 0, last_visitor: visit.visitor_name };
         clubStats[visit.club_name].totalScore += Number(visit.score);
         clubStats[visit.club_name].count += 1;
 
-        // DRC Stats (1 point per visit)
         if (visit.visitor_name) {
           if (!drcStats[visit.visitor_name]) drcStats[visit.visitor_name] = 0;
           drcStats[visit.visitor_name] += 1;
@@ -107,11 +105,10 @@ export default function Dashboard() {
       const board = Object.values(clubStats).map((club: any) => ({ ...club, average: (club.totalScore / club.count).toFixed(2) })).sort((a: any, b: any) => b.average - a.average);
       setLeaderboard(board);
 
-      const drcBoard = Object.keys(drcStats).map(name => ({ name, points: drcStats[name] })).sort((a:b) => b.points - a.points);
+      const drcBoard = Object.keys(drcStats).map(name => ({ name, points: drcStats[name] })).sort((a:any, b:any) => b.points - a.points);
       setDrcLeaderboard(drcBoard);
     }
 
-    // 2. Fetch Notifications
     let notifQuery = supabase.from('notifications').select('*').order('created_at', { ascending: false });
     if (userData.role === 'DRC') notifQuery = notifQuery.eq('target_role', 'DRC').eq('target_zone', userData.zone);
     else if (userData.role === 'Représentant Club') notifQuery = notifQuery.eq('target_role', 'Représentant Club').eq('target_club', userData.club);
@@ -120,14 +117,12 @@ export default function Dashboard() {
     const { data: notifData } = await notifQuery;
     if (notifData) setNotifications(notifData);
 
-    // 3. Fetch Events (Calendar)
     let eventQuery = supabase.from('club_events').select('*').order('event_date', { ascending: true });
     if (userData.role === 'DRC') eventQuery = eventQuery.eq('zone', userData.zone);
     if (userData.role === 'Représentant Club') eventQuery = eventQuery.eq('club_name', userData.club);
     const { data: eventsData } = await eventQuery;
     if (eventsData) setEvents(eventsData);
 
-    // 4. Fetch Feedbacks (Comité National Only)
     if (COMITE_NATIONAL_ROLES.includes(userData.role)) {
         const { data: fbData } = await supabase.from('drc_feedback').select('*').order('created_at', { ascending: false });
         if (fbData) setFeedbacks(fbData);
@@ -162,7 +157,7 @@ export default function Dashboard() {
       const { data: userData } = await supabase.from('users').select('*').eq('email', activeEmail).single();
       if (userData && isMounted) {
         setUser(userData);
-        requestNotificationPermission(); // Ask for PC/Phone notification permissions
+        requestNotificationPermission(); 
 
         await fetchAllClubs(); 
         await fetchData(userData);
@@ -176,7 +171,6 @@ export default function Dashboard() {
     return () => { isMounted = false; clearTimeout(failsafeTimer); };
   }, [isAuthenticated, corbadoUser, corbadoLoading, router]);
 
-  // --- REAL-TIME SUPABASE SUBSCRIPTION FOR NOTIFICATIONS ---
   useEffect(() => {
     if (!user) return;
     const channel = supabase.channel('realtime-notifications')
@@ -198,7 +192,6 @@ export default function Dashboard() {
     return () => { supabase.removeChannel(channel); }
   }, [user]);
 
-  // --- PDF GENERATOR FUNCTION ---
   const downloadReceipt = (visit: any) => {
     const doc = new jsPDF();
     const logo = new Image();
@@ -245,15 +238,27 @@ export default function Dashboard() {
 
   const handleAddEvent = async (e: React.FormEvent) => {
       e.preventDefault();
-      if (!newEventDate || !newEventPlace || !newEventDesc) return alert("Remplissez tous les champs.");
+      if (!newEventDate || !newEventPlace || !newEventDesc) return alert("Remplissez la date, le lieu et la description.");
       setIsUpdating(true);
 
-      const payload = { club_name: user.club, zone: user.zone, event_date: newEventDate, place: newEventPlace, description: newEventDesc, created_by: user.full_name };
+      const payload = { 
+          club_name: user.club, 
+          zone: user.zone, 
+          event_date: newEventDate, 
+          place: newEventPlace, 
+          google_maps_link: newEventMapLink,
+          description: newEventDesc, 
+          created_by: user.full_name 
+      };
+      
       const { error } = await supabase.from('club_events').insert(payload);
       
       if (!error) {
-          await supabase.from('notifications').insert({ target_role: 'DRC', target_zone: user.zone, message: `📅 Nouvel événement ajouté par ${user.club}.` });
-          setNewEventDate(''); setNewEventPlace(''); setNewEventDesc(''); fetchData(user); alert("Événement ajouté au calendrier !");
+          await supabase.from('notifications').insert({ target_role: 'DRC', target_zone: user.zone, message: `📅 ${user.club} a programmé une nouvelle action le ${newEventDate}.` });
+          setNewEventDate(''); setNewEventPlace(''); setNewEventMapLink(''); setNewEventDesc(''); 
+          setShowEventModal(false);
+          fetchData(user); 
+          alert("Événement ajouté au calendrier !");
       }
       setIsUpdating(false);
   };
@@ -348,6 +353,27 @@ export default function Dashboard() {
     router.push('/');
   };
 
+  // --- CALENDAR LOGIC ---
+  const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
+  const getFirstDayOfMonth = (year: number, month: number) => new Date(year, month, 1).getDay();
+  
+  const nextMonth = () => setCurrentMonthDate(new Date(currentMonthDate.getFullYear(), currentMonthDate.getMonth() + 1, 1));
+  const prevMonth = () => setCurrentMonthDate(new Date(currentMonthDate.getFullYear(), currentMonthDate.getMonth() - 1, 1));
+
+  const daysInCurrentMonth = getDaysInMonth(currentMonthDate.getFullYear(), currentMonthDate.getMonth());
+  const firstDay = getFirstDayOfMonth(currentMonthDate.getFullYear(), currentMonthDate.getMonth());
+  const startDayOffset = firstDay === 0 ? 6 : firstDay - 1; // Monday start
+  const monthNames = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
+
+  const handleDayClick = (dayNumber: number) => {
+      const formattedDate = `${currentMonthDate.getFullYear()}-${String(currentMonthDate.getMonth() + 1).padStart(2, '0')}-${String(dayNumber).padStart(2, '0')}`;
+      if (user.role === 'Représentant Club') {
+          setNewEventDate(formattedDate);
+          setShowEventModal(true);
+      }
+  };
+
+
   const unreadCount = notifications.filter(n => !n.is_read).length;
   const displayedLeaderboard = selectedZoneFilter === 'Toutes les zones' ? leaderboard : leaderboard.filter(c => c.zone === selectedZoneFilter);
 
@@ -434,39 +460,66 @@ export default function Dashboard() {
               <button onClick={() => setActiveTab('securite')} className={`flex items-center whitespace-nowrap gap-2 py-2.5 px-6 rounded-xl font-bold text-sm transition-all duration-200 ${activeTab === 'securite' ? 'bg-gray-900 text-white shadow-md' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}><Fingerprint size={18} /> FaceID</button>
             </div>
 
-            {/* ======================= CALENDAR TAB ======================= */}
+            {/* ======================= INTERACTIVE CALENDAR GRID ======================= */}
             {activeTab === 'calendar' && (
                 <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
-                    {user.role === 'Représentant Club' && (
-                        <div className="bg-white rounded-3xl shadow-sm border border-gray-200 overflow-hidden p-6 md:p-8">
-                            <h2 className="text-2xl font-extrabold text-gray-900 flex items-center gap-3 mb-6"><div className="bg-blue-100 p-2 rounded-xl text-interact-blue"><CalendarIcon size={20} /></div> Annoncer une Action</h2>
-                            <form onSubmit={handleAddEvent} className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                                <input type="date" value={newEventDate} onChange={e => setNewEventDate(e.target.value)} className="border-2 border-gray-200 rounded-xl p-3 focus:border-interact-blue" required />
-                                <input type="text" value={newEventPlace} onChange={e => setNewEventPlace(e.target.value)} placeholder="Lieu (Ex: Maison de culture)" className="border-2 border-gray-200 rounded-xl p-3 focus:border-interact-blue" required />
-                                <input type="text" value={newEventDesc} onChange={e => setNewEventDesc(e.target.value)} placeholder="Titre / Description de l'action" className="md:col-span-2 border-2 border-gray-200 rounded-xl p-3 focus:border-interact-blue" required />
-                                <button type="submit" disabled={isUpdating} className="md:col-span-4 bg-gray-900 hover:bg-black text-white font-bold py-3.5 px-6 rounded-xl shadow-lg mt-2">Ajouter au Calendrier</button>
-                            </form>
-                        </div>
-                    )}
-
                     <div className="bg-white rounded-3xl shadow-sm border border-gray-200 overflow-hidden p-6 md:p-8">
-                        <h3 className="text-xl font-bold text-gray-900 mb-6">Événements à venir ({isComiteNational ? 'National' : user.role === 'DRC' ? `Zone ${user.zone}` : user.club})</h3>
-                        <div className="space-y-4">
-                            {events.length > 0 ? events.map(ev => (
-                                <div key={ev.id} className="flex flex-col md:flex-row gap-4 p-5 bg-gray-50 border border-gray-100 rounded-2xl items-start md:items-center">
-                                    <div className="bg-white border-2 border-interact-blue/20 text-interact-blue font-black px-4 py-3 rounded-xl text-center min-w-[100px]">
-                                        {new Date(ev.event_date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
+                        <div className="flex justify-between items-center mb-6 border-b border-gray-100 pb-4">
+                            <h2 className="text-2xl font-extrabold text-gray-900 flex items-center gap-3">
+                                <CalendarIcon className="text-interact-blue" size={28} />
+                                {monthNames[currentMonthDate.getMonth()]} {currentMonthDate.getFullYear()}
+                            </h2>
+                            <div className="flex gap-2">
+                                <button onClick={prevMonth} className="p-2 bg-gray-50 hover:bg-gray-100 rounded-xl transition"><ChevronLeft size={20} /></button>
+                                <button onClick={nextMonth} className="p-2 bg-gray-50 hover:bg-gray-100 rounded-xl transition"><ChevronRight size={20} /></button>
+                            </div>
+                        </div>
+
+                        {user.role === 'Représentant Club' && (
+                            <p className="text-sm text-gray-500 mb-4 bg-blue-50 text-interact-blue p-3 rounded-xl font-medium inline-block border border-blue-100">
+                                💡 Cliquez sur une date du calendrier pour annoncer une nouvelle action.
+                            </p>
+                        )}
+
+                        <div className="grid grid-cols-7 gap-2">
+                            {['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'].map(day => (
+                                <div key={day} className="text-center font-bold text-gray-400 text-xs tracking-widest uppercase mb-2">{day}</div>
+                            ))}
+                            
+                            {/* Empty offset slots */}
+                            {Array.from({ length: startDayOffset }).map((_, i) => (
+                                <div key={`empty-${i}`} className="bg-gray-50/50 rounded-xl border border-transparent"></div>
+                            ))}
+
+                            {/* Calendar Days */}
+                            {Array.from({ length: daysInCurrentMonth }).map((_, i) => {
+                                const dayNum = i + 1;
+                                const formattedDateStr = `${currentMonthDate.getFullYear()}-${String(currentMonthDate.getMonth() + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+                                const dayEvents = events.filter(e => e.event_date === formattedDateStr);
+                                
+                                return (
+                                    <div 
+                                        key={dayNum} 
+                                        onClick={() => handleDayClick(dayNum)}
+                                        className={`min-h-[100px] border border-gray-100 rounded-xl p-2 transition-all group ${user.role === 'Représentant Club' ? 'cursor-pointer hover:border-interact-blue hover:shadow-md bg-white' : 'bg-white'}`}
+                                    >
+                                        <div className="text-right text-sm font-bold text-gray-400 group-hover:text-interact-blue">{dayNum}</div>
+                                        <div className="mt-1 space-y-1 overflow-y-auto max-h-[70px] custom-scrollbar">
+                                            {dayEvents.map(ev => (
+                                                <div key={ev.id} className="bg-blue-50 border border-blue-100 rounded-lg p-1.5 text-xs text-left" title={`${ev.club_name}: ${ev.description}`}>
+                                                    <span className="font-black text-interact-blue block truncate">{ev.club_name}</span>
+                                                    <span className="text-gray-700 truncate block">{ev.description}</span>
+                                                    {ev.google_maps_link && (
+                                                        <a href={ev.google_maps_link} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-[10px] flex items-center gap-1 text-blue-500 hover:underline mt-1 font-medium">
+                                                            <MapPin size={10} /> Localisation
+                                                        </a>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
-                                    <div className="flex-1">
-                                        <h4 className="font-bold text-gray-900 text-lg">{ev.description}</h4>
-                                        <p className="text-sm text-gray-500 mt-1 flex items-center gap-2"><MapPin size={14}/> {ev.place}</p>
-                                    </div>
-                                    <div className="text-right">
-                                        <span className="bg-gray-200 text-gray-700 px-3 py-1 rounded-md text-xs font-bold block mb-1">{ev.club_name}</span>
-                                        <span className="text-xs text-gray-400">Zone {ev.zone}</span>
-                                    </div>
-                                </div>
-                            )) : <p className="text-gray-400 text-center py-10">Aucun événement planifié.</p>}
+                                );
+                            })}
                         </div>
                     </div>
                 </div>
@@ -625,7 +678,6 @@ export default function Dashboard() {
             {['leaderboard'].includes(activeTab) && !['Représentant Club'].includes(user.role) && (
               <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 
-                {/* NEW: DRC LEADERBOARD (ONLY COMITE NATIONAL) */}
                 {isComiteNational && (
                     <div className="bg-gradient-to-br from-gray-900 to-black rounded-3xl shadow-lg border border-gray-800 overflow-hidden text-white">
                       <div className="p-6 md:p-8 border-b border-gray-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -873,7 +925,40 @@ export default function Dashboard() {
         )}
       </main>
 
-      {/* ======================= REPORT MODAL (UPGRADED WITH COMMENTS) ======================= */}
+      {/* ======================= ADD EVENT MODAL ======================= */}
+      {showEventModal && (
+        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full">
+            <div className="p-6 md:p-8 border-b border-gray-100 flex justify-between items-center sticky top-0 bg-white/90 backdrop-blur-md z-10">
+              <h3 className="text-2xl font-extrabold text-gray-900 flex items-center gap-2"><CalendarIcon className="text-interact-blue" /> Annoncer une Action</h3>
+              <button onClick={() => setShowEventModal(false)} className="text-gray-400 hover:text-red-600 bg-gray-100 w-10 h-10 rounded-full flex items-center justify-center">&times;</button>
+            </div>
+            <form onSubmit={handleAddEvent} className="p-6 md:p-8 space-y-4">
+               <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">Date de l'action</label>
+                  <input type="date" value={newEventDate} onChange={e => setNewEventDate(e.target.value)} className="w-full border-2 border-gray-200 rounded-xl p-3 focus:border-interact-blue" required />
+               </div>
+               <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">Nom du lieu</label>
+                  <input type="text" value={newEventPlace} onChange={e => setNewEventPlace(e.target.value)} placeholder="Ex: Maison de culture Hammam-Lif" className="w-full border-2 border-gray-200 rounded-xl p-3 focus:border-interact-blue" required />
+               </div>
+               <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">Lien Google Maps (Optionnel)</label>
+                  <input type="url" value={newEventMapLink} onChange={e => setNewEventMapLink(e.target.value)} placeholder="https://maps.app.goo.gl/..." className="w-full border-2 border-gray-200 rounded-xl p-3 focus:border-interact-blue" />
+               </div>
+               <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">Motif / Description</label>
+                  <input type="text" value={newEventDesc} onChange={e => setNewEventDesc(e.target.value)} placeholder="Titre ou description courte de l'action" className="w-full border-2 border-gray-200 rounded-xl p-3 focus:border-interact-blue" required />
+               </div>
+               <button type="submit" disabled={isUpdating} className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold flex justify-center items-center gap-3 mt-6 shadow-xl text-lg">
+                  {isUpdating ? <Loader2 className="animate-spin" size={24} /> : 'Ajouter au Calendrier'}
+               </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ======================= REPORT MODAL ======================= */}
       {showReportModal && (
         <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in">
           <div className="bg-white rounded-3xl shadow-2xl max-w-xl w-full max-h-[90vh] overflow-y-auto">
