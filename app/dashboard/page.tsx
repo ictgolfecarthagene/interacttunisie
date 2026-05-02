@@ -4,7 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { useRouter } from 'next/navigation';
 
 import { useCorbado, CorbadoAuth, CorbadoProvider } from '@corbado/react';
-import { Trophy, Users, FileText, Plus, CheckCircle, Loader2, Fingerprint, Trash2, Building2, LogOut, MessageSquare, Clock, Map as MapIcon, MapPin, ChevronRight, ChevronLeft, Activity, Download, Bell, Calendar as CalendarIcon, Star, Medal, ExternalLink, XCircle } from 'lucide-react';
+import { Trophy, Users, FileText, Plus, CheckCircle, Loader2, Fingerprint, Trash2, Building2, LogOut, MessageSquare, Clock, Map as MapIcon, MapPin, ChevronRight, ChevronLeft, Activity, Download, Bell, Calendar as CalendarIcon, Star, Medal, ExternalLink, EyeOff, Save } from 'lucide-react';
 import jsPDF from 'jspdf';
 
 const COMITE_NATIONAL_ROLES = ['Coordinateur National', 'Vice Coordinateur', 'Secrétaire National', 'Secrétaire National Adjoint', 'Trésorier', 'Chef de Protocole'];
@@ -25,12 +25,10 @@ export default function Dashboard() {
   const [feedbacks, setFeedbacks] = useState<any[]>([]);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
-
   const [isUpdating, setIsUpdating] = useState(false);
   
   const [activeTab, setActiveTab] = useState<'leaderboard' | 'users' | 'clubs' | 'securite' | 'my_club' | 'map' | 'calendar' | 'feedbacks'>('leaderboard');
   const [selectedZoneFilter, setSelectedZoneFilter] = useState('Toutes les zones');
-  
   const [selectedMapZone, setSelectedMapZone] = useState<string | null>(null);
   const [selectedMapClub, setSelectedMapClub] = useState<string | null>(null);
 
@@ -39,7 +37,6 @@ export default function Dashboard() {
   const [selectedVisitForFeedback, setSelectedVisitForFeedback] = useState<any>(null);
   const [feedbackRating, setFeedbackRating] = useState('');
   const [feedbackText, setFeedbackText] = useState('');
-  
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const [visitReason, setVisitReason] = useState('Réunion Statutaire');
@@ -50,14 +47,12 @@ export default function Dashboard() {
 
   const [newClubName, setNewClubName] = useState('');
   const [newClubZone, setNewClubZone] = useState('');
-
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserRole, setNewUserRole] = useState('PENDING');
   const [newUserZone, setNewUserZone] = useState('');
   const [newUserClub, setNewUserClub] = useState('');
 
-  // --- CALENDAR STATES ---
   const [currentMonthDate, setCurrentMonthDate] = useState(new Date());
   const [showEventModal, setShowEventModal] = useState(false);
   const [showDayEventsModal, setShowDayEventsModal] = useState(false);
@@ -75,15 +70,11 @@ export default function Dashboard() {
   const isComiteNational = user ? COMITE_NATIONAL_ROLES.includes(user.role) : false;
 
   const requestNotificationPermission = () => {
-    if ("Notification" in window && Notification.permission !== "granted" && Notification.permission !== "denied") {
-      Notification.requestPermission();
-    }
+    if ("Notification" in window && Notification.permission !== "granted" && Notification.permission !== "denied") Notification.requestPermission();
   };
 
   const triggerBrowserNotification = (title: string, body: string) => {
-    if ("Notification" in window && Notification.permission === "granted") {
-      new Notification(title, { body, icon: '/logo.png' });
-    }
+    if ("Notification" in window && Notification.permission === "granted") new Notification(title, { body, icon: '/logo.png' });
   };
 
   const fetchData = async (userData: any) => {
@@ -101,18 +92,14 @@ export default function Dashboard() {
         if (!clubStats[visit.club_name]) clubStats[visit.club_name] = { club_name: visit.club_name, zone: visit.zone, totalScore: 0, count: 0, last_visitor: visit.visitor_name };
         clubStats[visit.club_name].totalScore += Number(visit.score);
         clubStats[visit.club_name].count += 1;
-
         if (visit.visitor_name) {
           if (!drcStats[visit.visitor_name]) drcStats[visit.visitor_name] = 0;
           drcStats[visit.visitor_name] += 1;
         }
       });
       
-      const board = Object.values(clubStats).map((club: any) => ({ ...club, average: (club.totalScore / club.count).toFixed(2) })).sort((a: any, b: any) => b.average - a.average);
-      setLeaderboard(board);
-
-      const drcBoard = Object.keys(drcStats).map(name => ({ name, points: drcStats[name] })).sort((a:any, b:any) => b.points - a.points);
-      setDrcLeaderboard(drcBoard);
+      setLeaderboard(Object.values(clubStats).map((club: any) => ({ ...club, average: (club.totalScore / club.count).toFixed(2) })).sort((a: any, b: any) => b.average - a.average));
+      setDrcLeaderboard(Object.keys(drcStats).map(name => ({ name, points: drcStats[name] })).sort((a:any, b:any) => b.points - a.points));
     }
 
     let notifQuery = supabase.from('notifications').select('*').order('created_at', { ascending: false });
@@ -151,23 +138,15 @@ export default function Dashboard() {
 
     async function fetchDashboardData() {
       const { data: { user: sbUser } } = await supabase.auth.getUser();
-      let activeEmail = sbUser?.email;
-      if (!activeEmail) {
-        if (corbadoLoading) return; 
-        if (isAuthenticated && corbadoUser?.email) activeEmail = corbadoUser.email;
-      }
-      if (!activeEmail) {
-        if (isMounted) setIsAppLoading(false);
-        return;
-      }
+      let activeEmail = sbUser?.email || (isAuthenticated && corbadoUser?.email ? corbadoUser.email : null);
+      if (!activeEmail) { if (isMounted && !corbadoLoading) setIsAppLoading(false); return; }
+      
       const { data: userData } = await supabase.from('users').select('*').eq('email', activeEmail).single();
       if (userData && isMounted) {
         setUser(userData);
         requestNotificationPermission(); 
-
         await fetchAllClubs(); 
         await fetchData(userData);
-        
         if (userData.role === 'Représentant Club') setActiveTab('my_club');
         if (COMITE_NATIONAL_ROLES.includes(userData.role)) await fetchAllUsers();
       }
@@ -183,31 +162,48 @@ export default function Dashboard() {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, (payload) => {
          const newNotif = payload.new as any;
          let isForMe = false;
-         
          if (newNotif.target_role === 'Comité National' && COMITE_NATIONAL_ROLES.includes(user.role)) isForMe = true;
          if (newNotif.target_role === 'DRC' && user.role === 'DRC' && newNotif.target_zone === user.zone) isForMe = true;
          if (newNotif.target_role === 'Représentant Club' && user.role === 'Représentant Club' && newNotif.target_club === user.club) isForMe = true;
-
          if (isForMe) {
            setNotifications(prev => [newNotif, ...prev]);
            triggerBrowserNotification("Interact Tunisie", newNotif.message);
          }
-      })
-      .subscribe();
-
+      }).subscribe();
     return () => { supabase.removeChannel(channel); }
   }, [user]);
 
+  // --- LOCAL BACKUP SYSTEM ---
+  const handleDownloadBackup = () => {
+    const backupData = {
+        timestamp: new Date().toISOString(),
+        generated_by: user.full_name,
+        users: allUsers,
+        clubs: allClubs,
+        visits: visits,
+        club_events: events,
+        drc_feedbacks: feedbacks,
+        system_notifications: notifications
+    };
+    const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `backup_interact_tunisie_${new Date().toLocaleDateString('fr-FR').replace(/\//g, '-')}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const downloadReceipt = (visit: any) => {
     const doc = new jsPDF();
-    const logo = new Image();
-    logo.src = '/logo.png'; 
-    try { doc.addImage(logo, 'PNG', 20, 15, 30, 30); } catch (e) { console.warn("Logo non chargé"); }
+    const logo = new Image(); logo.src = '/logo.png'; 
+    try { doc.addImage(logo, 'PNG', 20, 15, 30, 30); } catch (e) {}
 
     doc.setFont("helvetica", "bold"); doc.setFontSize(22); doc.setTextColor(0, 66, 137); 
     doc.text("RAPPORT OFFICIEL DE VISITE", 60, 30);
     doc.setFontSize(10); doc.setTextColor(150, 150, 150); doc.text("Interact Tunisie - Comité National", 60, 37);
-
     doc.setLineWidth(0.5); doc.setDrawColor(200, 200, 200); doc.line(20, 50, 190, 50);
 
     doc.setFontSize(12); doc.setTextColor(50, 50, 50);
@@ -233,7 +229,6 @@ export default function Dashboard() {
     doc.setFontSize(11); doc.setTextColor(50, 50, 50); doc.setFont("helvetica", "bold"); doc.text("Commentaire du DRC :", 20, 215); doc.setFont("helvetica", "italic");
     const splitComment = doc.splitTextToSize(visit.comments || "Aucun commentaire fourni par le DRC.", 170);
     doc.text(splitComment, 20, 225);
-
     doc.save(`Interact_Rapport_${visit.club_name.replace(/\s+/g, '_')}.pdf`);
   };
 
@@ -242,29 +237,22 @@ export default function Dashboard() {
     setNotifications(notifications.map(n => n.id === id ? { ...n, is_read: true } : n));
   };
 
+  const handleArchiveFeedback = async (id: string) => {
+    setIsUpdating(true);
+    const { error } = await supabase.from('drc_feedback').update({ is_archived: true }).eq('id', id);
+    if (!error) setFeedbacks(feedbacks.map(fb => fb.id === id ? { ...fb, is_archived: true } : fb));
+    setIsUpdating(false);
+  };
+
   const handleAddEvent = async (e: React.FormEvent) => {
       e.preventDefault();
       if (!newEventDate || !newEventPlace || !newEventDesc) return alert("Remplissez la date, le lieu et la description.");
       setIsUpdating(true);
-
-      const payload = { 
-          club_name: user.club, 
-          zone: user.zone, 
-          event_date: newEventDate, 
-          place: newEventPlace, 
-          google_maps_link: newEventMapLink,
-          description: newEventDesc, 
-          created_by: user.full_name 
-      };
-      
+      const payload = { club_name: user.club, zone: user.zone, event_date: newEventDate, place: newEventPlace, google_maps_link: newEventMapLink, description: newEventDesc, created_by: user.full_name };
       const { error } = await supabase.from('club_events').insert(payload);
-      
       if (!error) {
-          await supabase.from('notifications').insert({ target_role: 'DRC', target_zone: user.zone, message: `📅 ${user.club} a programmé une nouvelle action le ${newEventDate}.` });
-          setNewEventDate(''); setNewEventPlace(''); setNewEventMapLink(''); setNewEventDesc(''); 
-          setShowEventModal(false);
-          fetchData(user); 
-          alert("Événement ajouté au calendrier !");
+          await supabase.from('notifications').insert({ target_role: 'DRC', target_zone: user.zone, message: `📅 Mise à jour Calendrier : ${user.club} a programmé une nouvelle action le ${newEventDate}.` });
+          setNewEventDate(''); setNewEventPlace(''); setNewEventMapLink(''); setNewEventDesc(''); setShowEventModal(false); fetchData(user); alert("Événement ajouté ! DRC notifié.");
       }
       setIsUpdating(false);
   };
@@ -284,39 +272,32 @@ export default function Dashboard() {
     if (!selectedClub) return alert("Veuillez sélectionner un club.");
     const allScores = Object.values(scores).map(Number);
     if (allScores.some(isNaN) || Object.values(scores).some(s => s === '')) return alert("Veuillez remplir toutes les notes.");
-
     setIsSubmitting(true);
     const averageScore = allScores.reduce((a, b) => a + b, 0) / allScores.length;
     const finalReason = visitReason === 'Autre' ? specificReason : visitReason;
-    const currentClub = allClubs.find(c => c.name === selectedClub);
-    const reportZone = currentClub ? currentClub.zone : (user?.zone || 'Zone Non Définie');
+    const reportZone = allClubs.find(c => c.name === selectedClub)?.zone || user?.zone || 'Zone Non Définie';
 
     const payload = {
       club_name: selectedClub, zone: reportZone, visitor_name: user?.full_name || 'Utilisateur', reason: finalReason, score: Number(averageScore.toFixed(2)), 
       etat_score: Number(scores.etat), effectif_score: Number(scores.effectif), organisation_score: Number(scores.organisation),
-      deroulement_score: Number(scores.deroulement), professionnalisme_score: Number(scores.professionnalisme),
-      comments: reportComment, date: new Date().toLocaleDateString('fr-FR')
+      deroulement_score: Number(scores.deroulement), professionnalisme_score: Number(scores.professionnalisme), comments: reportComment, date: new Date().toLocaleDateString('fr-FR')
     };
-
     const { error } = await supabase.from('visits').insert(payload);
-    
     if (!error) {
        await supabase.from('notifications').insert({ target_role: 'Représentant Club', target_club: selectedClub, message: `📝 Une visite officielle a été enregistrée par le DRC ${user.full_name}. Veuillez laisser votre feedback.` });
+       try { await fetch('/api/sheets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); } catch (e) {}
        alert("Rapport soumis avec succès ! 🎉");
-       setShowReportModal(false); setSelectedClub(''); setSpecificReason(''); setReportComment('');
-       setScores({ etat: '', effectif: '', organisation: '', deroulement: '', professionnalisme: '' });
+       setShowReportModal(false); setSelectedClub(''); setSpecificReason(''); setReportComment(''); setScores({ etat: '', effectif: '', organisation: '', deroulement: '', professionnalisme: '' });
        fetchData(user);
-    } else { alert(`Erreur lors de la soumission.`); }
+    } else alert(`Erreur lors de la soumission.`);
     setIsSubmitting(false);
   };
 
   const handleSubmitFeedback = async () => {
     if (!feedbackRating) return alert("Veuillez donner une note au DRC.");
     setIsSubmitting(true);
-    
-    const payload = { visit_id: selectedVisitForFeedback.id, club_name: user.club, drc_name: selectedVisitForFeedback.visitor_name, rating: Number(feedbackRating), feedback_text: feedbackText };
+    const payload = { visit_id: selectedVisitForFeedback.id, club_name: user.club, drc_name: selectedVisitForFeedback.visitor_name, rating: Number(feedbackRating), feedback_text: feedbackText, is_archived: false };
     const { error } = await supabase.from('drc_feedback').insert(payload);
-    
     if (!error) {
         await supabase.from('notifications').insert({ target_role: 'Comité National', message: `🔒 Nouveau feedback confidentiel soumis par ${user.club} pour le DRC ${selectedVisitForFeedback.visitor_name}.` });
         alert("Feedback envoyé au Comité National avec succès ! 🔒");
@@ -329,13 +310,12 @@ export default function Dashboard() {
     e.preventDefault(); if (!newUserName || !newUserEmail) return alert("Veuillez remplir le nom et l'email."); setIsUpdating(true);
     const payload = { full_name: newUserName, email: newUserEmail.toLowerCase(), role: newUserRole, zone: ['DRC', 'Représentant Club'].includes(newUserRole) ? newUserZone : null, club: newUserRole === 'Représentant Club' ? newUserClub : null };
     const { error } = await supabase.from('users').insert(payload);
-    if (!error) { setNewUserName(''); setNewUserEmail(''); setNewUserRole('PENDING'); setNewUserZone(''); setNewUserClub(''); await fetchAllUsers(); alert("Membre pré-enregistré !"); }
+    if (!error) { setNewUserName(''); setNewUserEmail(''); setNewUserRole('PENDING'); setNewUserZone(''); setNewUserClub(''); await fetchAllUsers(); alert("Membre ajouté !"); }
     setIsUpdating(false);
   };
 
   const handleUpdateUser = async (userId: string, field: 'role' | 'zone' | 'club', value: string) => {
-    setIsUpdating(true);
-    const updateData: any = { [field]: value };
+    setIsUpdating(true); const updateData: any = { [field]: value };
     if (field === 'role' && value !== 'DRC' && value !== 'Représentant Club') { updateData.zone = null; updateData.club = null; }
     const { error } = await supabase.from('users').update(updateData).eq('id', userId);
     if (!error) { setAllUsers(allUsers.map(u => u.id === userId ? { ...u, ...updateData } : u)); if (userId === user.id) setUser({ ...user, ...updateData }); }
@@ -370,15 +350,10 @@ export default function Dashboard() {
     router.push('/');
   };
 
-  // --- CALENDAR LOGIC ---
-  const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
-  const getFirstDayOfMonth = (year: number, month: number) => new Date(year, month, 1).getDay();
-  
   const nextMonth = () => setCurrentMonthDate(new Date(currentMonthDate.getFullYear(), currentMonthDate.getMonth() + 1, 1));
   const prevMonth = () => setCurrentMonthDate(new Date(currentMonthDate.getFullYear(), currentMonthDate.getMonth() - 1, 1));
-
-  const daysInCurrentMonth = getDaysInMonth(currentMonthDate.getFullYear(), currentMonthDate.getMonth());
-  const firstDay = getFirstDayOfMonth(currentMonthDate.getFullYear(), currentMonthDate.getMonth());
+  const daysInCurrentMonth = new Date(currentMonthDate.getFullYear(), currentMonthDate.getMonth() + 1, 0).getDate();
+  const firstDay = new Date(currentMonthDate.getFullYear(), currentMonthDate.getMonth(), 1).getDay();
   const startDayOffset = firstDay === 0 ? 6 : firstDay - 1; 
   const monthNames = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
 
@@ -405,19 +380,17 @@ export default function Dashboard() {
 
   const unreadCount = notifications.filter(n => !n.is_read).length;
   const displayedLeaderboard = selectedZoneFilter === 'Toutes les zones' ? leaderboard : leaderboard.filter(c => c.zone === selectedZoneFilter);
+  const displayedFeedbacks = feedbacks.filter(fb => !fb.is_archived);
 
   if (isAppLoading) return (<div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 text-interact-blue font-bold"><Loader2 className="animate-spin mb-4" size={40} /><p className="animate-pulse">Loading Interact Tunisie...</p></div>);
   if (!user) return (<div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 text-red-500 font-bold p-4 text-center"><p>Session expirée.</p><button onClick={() => router.push('/')} className="mt-6 px-6 py-3 bg-interact-blue text-white rounded-xl shadow-lg hover:bg-blue-700 transition">Retour à la connexion</button></div>);
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-800 selection:bg-blue-100">
-      
       <nav className="bg-white/90 backdrop-blur-lg border-b border-gray-200 sticky top-0 z-30 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex justify-between items-center relative">
           <div className="flex items-center gap-4">
-            <div className="hidden sm:flex">
-                <img src="/logo.png" alt="Logo" className="w-10 h-10 rounded-xl object-contain bg-white shadow-sm border border-gray-100" />
-            </div>
+            <div className="hidden sm:flex"><img src="/logo.png" alt="Logo" className="w-10 h-10 rounded-xl object-contain bg-white shadow-sm border border-gray-100" /></div>
             <div>
               <h1 className="text-xl font-extrabold text-gray-900 tracking-tight">Interact <span className="text-interact-blue">Tunisie</span></h1>
               <p className="text-xs text-gray-500 font-medium hidden sm:block">Portail de Coordination Nationale</p>
@@ -427,8 +400,7 @@ export default function Dashboard() {
             {user.role !== 'PENDING' && (
                 <div className="relative">
                     <button onClick={() => setShowNotifications(!showNotifications)} className="p-2 text-gray-500 hover:text-interact-blue transition relative">
-                        <Bell size={22} />
-                        {unreadCount > 0 && <span className="absolute top-0 right-0 bg-red-500 text-white text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center">{unreadCount}</span>}
+                        <Bell size={22} />{unreadCount > 0 && <span className="absolute top-0 right-0 bg-red-500 text-white text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center">{unreadCount}</span>}
                     </button>
                     {showNotifications && (
                         <div className="absolute right-0 mt-2 w-80 bg-white border border-gray-100 shadow-2xl rounded-2xl p-4 z-50 animate-in fade-in slide-in-from-top-4">
@@ -438,21 +410,16 @@ export default function Dashboard() {
                             </div>
                             <div className="space-y-3 max-h-64 overflow-y-auto">
                                 {notifications.length > 0 ? notifications.map(n => (
-                                    <div key={n.id} onClick={() => markNotificationAsRead(n.id)} className={`p-3 rounded-xl text-sm cursor-pointer transition ${n.is_read ? 'bg-gray-50 text-gray-500' : 'bg-blue-50 text-interact-blue font-bold border border-blue-100'}`}>
-                                        {n.message}
-                                    </div>
+                                    <div key={n.id} onClick={() => markNotificationAsRead(n.id)} className={`p-3 rounded-xl text-sm cursor-pointer transition ${n.is_read ? 'bg-gray-50 text-gray-500' : 'bg-blue-50 text-interact-blue font-bold border border-blue-100'}`}>{n.message}</div>
                                 )) : <p className="text-xs text-gray-400 text-center py-4">Aucune notification.</p>}
                             </div>
                         </div>
                     )}
                 </div>
             )}
-
             <div className="text-right hidden md:block">
               <p className="text-gray-900 font-bold leading-none">{user.full_name}</p>
-              <p className="text-xs text-gray-500 font-medium mt-1">
-                {user.role === 'DRC' ? `DRC ${user.zone}` : user.role === 'Représentant Club' ? `Rep. ${user.club}` : user.role}
-              </p>
+              <p className="text-xs text-gray-500 font-medium mt-1">{user.role === 'DRC' ? `DRC ${user.zone}` : user.role === 'Représentant Club' ? `Rep. ${user.club}` : user.role}</p>
             </div>
             <button onClick={handleLogout} className="flex items-center gap-2 bg-white text-gray-600 border border-gray-200 hover:bg-red-50 hover:text-red-600 px-4 py-2 rounded-xl text-sm font-bold shadow-sm transition-all"><LogOut size={16} className="hidden sm:block" /> Déconnexion</button>
           </div>
@@ -460,12 +427,9 @@ export default function Dashboard() {
       </nav>
 
       <main className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8 space-y-8">
-        
         {user.role === 'PENDING' ? (
           <div className="bg-white rounded-3xl shadow-sm border border-gray-200 p-10 md:p-16 text-center max-w-2xl mx-auto mt-10 animate-in fade-in zoom-in-95 duration-500">
-            <div className="mx-auto bg-gray-50 w-24 h-24 rounded-full flex items-center justify-center mb-6 border-4 border-gray-100 shadow-inner">
-              <Clock className="text-interact-blue" size={40} />
-            </div>
+            <div className="mx-auto bg-gray-50 w-24 h-24 rounded-full flex items-center justify-center mb-6 border-4 border-gray-100 shadow-inner"><Clock className="text-interact-blue" size={40} /></div>
             <h2 className="text-2xl font-extrabold text-gray-900 mb-4">Compte en attente</h2>
             <p className="text-gray-500 font-medium leading-relaxed mb-8">Bienvenue sur le portail Interact Tunisie, <b>{user.full_name}</b> !<br/><br/>Le Comité National doit maintenant vous assigner un rôle officiel pour débloquer votre accès au tableau de bord.</p>
           </div>
@@ -488,7 +452,7 @@ export default function Dashboard() {
                 <button onClick={() => setActiveTab('my_club')} className={`flex items-center whitespace-nowrap gap-2 py-2.5 px-6 rounded-xl font-bold text-sm transition-all duration-200 ${activeTab === 'my_club' ? 'bg-gray-900 text-white shadow-md' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}><Building2 size={18} /> Mon Club</button>
               )}
               <button onClick={() => setActiveTab('calendar')} className={`flex items-center whitespace-nowrap gap-2 py-2.5 px-6 rounded-xl font-bold text-sm transition-all duration-200 ${activeTab === 'calendar' ? 'bg-gray-900 text-white shadow-md' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}><CalendarIcon size={18} /> Calendrier</button>
-              <button onClick={() => setActiveTab('securite')} className={`flex items-center whitespace-nowrap gap-2 py-2.5 px-6 rounded-xl font-bold text-sm transition-all duration-200 ${activeTab === 'securite' ? 'bg-gray-900 text-white shadow-md' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}><Fingerprint size={18} /> FaceID</button>
+              <button onClick={() => setActiveTab('securite')} className={`flex items-center whitespace-nowrap gap-2 py-2.5 px-6 rounded-xl font-bold text-sm transition-all duration-200 ${activeTab === 'securite' ? 'bg-gray-900 text-white shadow-md' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}><Fingerprint size={18} /> FaceID & Sauvegarde</button>
             </div>
 
             {/* ======================= INTERACTIVE CALENDAR GRID ======================= */}
@@ -501,7 +465,6 @@ export default function Dashboard() {
                                 {monthNames[currentMonthDate.getMonth()]} {currentMonthDate.getFullYear()}
                             </h2>
                             <div className="flex flex-col sm:flex-row gap-2">
-                                {/* Calendar Filters */}
                                 {isComiteNational && (
                                     <select value={calZoneFilter} onChange={(e) => {setCalZoneFilter(e.target.value); setCalClubFilter('Tous');}} className="border-2 border-gray-200 rounded-xl p-2 font-bold text-sm outline-none focus:border-interact-blue cursor-pointer">
                                         <option value="Toutes">Filtrer par Zone (Toutes)</option>
@@ -532,12 +495,10 @@ export default function Dashboard() {
                                 <div key={day} className="text-center font-bold text-gray-400 text-xs tracking-widest uppercase mb-2">{day}</div>
                             ))}
                             
-                            {/* Empty offset slots */}
                             {Array.from({ length: startDayOffset }).map((_, i) => (
                                 <div key={`empty-${i}`} className="bg-gray-50/50 rounded-xl border border-transparent"></div>
                             ))}
 
-                            {/* Calendar Days */}
                             {Array.from({ length: daysInCurrentMonth }).map((_, i) => {
                                 const dayNum = i + 1;
                                 const formattedDateStr = `${currentMonthDate.getFullYear()}-${String(currentMonthDate.getMonth() + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
@@ -571,23 +532,28 @@ export default function Dashboard() {
                 <div className="bg-white rounded-3xl shadow-sm border border-gray-200 overflow-hidden animate-in fade-in slide-in-from-bottom-4">
                   <div className="p-6 md:p-8 border-b border-gray-100 flex items-center gap-3 bg-red-50/30">
                     <div className="bg-red-100 p-2 rounded-xl text-red-600"><Star size={20} /></div>
-                    <h2 className="text-2xl font-extrabold text-gray-900">Retours Confidentiels sur les DRC</h2>
+                    <h2 className="text-2xl font-extrabold text-gray-900">Retours Confidentiels (Non Lus)</h2>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm text-left">
                       <thead className="bg-gray-50/50 text-gray-400 font-bold border-b uppercase tracking-widest text-xs">
-                        <tr><th className="px-8 py-5">Date</th><th className="px-8 py-5">Évalué par (Club)</th><th className="px-8 py-5">DRC Concerné</th><th className="px-8 py-5 text-center">Note / 10</th><th className="px-8 py-5">Commentaire Secret</th></tr>
+                        <tr><th className="px-8 py-5">Date</th><th className="px-8 py-5">Évalué par</th><th className="px-8 py-5">DRC Concerné</th><th className="px-8 py-5 text-center">Note / 10</th><th className="px-8 py-5">Commentaire Secret</th><th className="px-8 py-5 text-right">Action</th></tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
-                        {feedbacks.length > 0 ? feedbacks.map((fb) => (
+                        {displayedFeedbacks.length > 0 ? displayedFeedbacks.map((fb) => (
                           <tr key={fb.id} className="hover:bg-gray-50">
                             <td className="px-8 py-5 text-gray-500">{new Date(fb.created_at).toLocaleDateString('fr-FR')}</td>
                             <td className="px-8 py-5 font-bold text-gray-900">{fb.club_name}</td>
                             <td className="px-8 py-5 text-gray-800 font-medium">{fb.drc_name}</td>
                             <td className="px-8 py-5 text-center font-black text-red-500 text-lg">{fb.rating}</td>
                             <td className="px-8 py-5 text-gray-600 italic max-w-xs truncate" title={fb.feedback_text}>{fb.feedback_text || "Aucun commentaire"}</td>
+                            <td className="px-8 py-5 text-right">
+                                <button onClick={() => handleArchiveFeedback(fb.id)} disabled={isUpdating} className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold py-2 px-3 rounded-lg text-xs ml-auto transition-colors">
+                                    <EyeOff size={14} /> Archiver
+                                </button>
+                            </td>
                           </tr>
-                        )) : <tr><td colSpan={5} className="px-8 py-16 text-center text-gray-400">Aucun feedback enregistré.</td></tr>}
+                        )) : <tr><td colSpan={6} className="px-8 py-16 text-center text-gray-400">Aucun nouveau feedback.</td></tr>}
                       </tbody>
                     </table>
                   </div>
@@ -944,7 +910,7 @@ export default function Dashboard() {
               </div>
             )}
             
-            {/* Securite Tab */}
+            {/* Securite & Backup Tab */}
             {activeTab === 'securite' && (
               <div className="animate-in fade-in zoom-in-95 duration-500 bg-white rounded-3xl shadow-sm border border-gray-200 overflow-hidden p-8 md:p-16 text-center max-w-2xl mx-auto mt-10">
                 <div className="mx-auto bg-gradient-to-br from-gray-900 to-black w-24 h-24 rounded-3xl flex items-center justify-center mb-8 shadow-2xl transform rotate-3">
@@ -960,6 +926,16 @@ export default function Dashboard() {
                     </CorbadoProvider>
                   </div>
                 </div>
+
+                {isComiteNational && (
+                  <div className="mt-12 border-t border-gray-100 pt-10">
+                    <h3 className="text-xl font-extrabold text-gray-900 mb-3">Sauvegarde des données (Backup)</h3>
+                    <p className="text-sm text-gray-500 mb-6 max-w-lg mx-auto">Téléchargez une copie complète et locale de toute la base de données (Utilisateurs, Clubs, Visites, Calendrier, Feedbacks) au format JSON.</p>
+                    <button onClick={handleDownloadBackup} className="bg-interact-blue hover:bg-blue-700 text-white font-bold py-4 px-8 rounded-xl flex items-center justify-center gap-3 mx-auto transition-colors shadow-lg">
+                      <Save size={20} /> Télécharger la sauvegarde complète
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </>
@@ -976,7 +952,7 @@ export default function Dashboard() {
             </div>
             <form onSubmit={handleAddEvent} className="p-6 md:p-8 space-y-4">
                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-1">Date</label>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">Date de l'action</label>
                   <input type="date" value={newEventDate} onChange={e => setNewEventDate(e.target.value)} className="w-full border-2 border-gray-200 rounded-xl p-3 focus:border-interact-blue" required />
                </div>
                <div>
@@ -989,7 +965,7 @@ export default function Dashboard() {
                </div>
                <div>
                   <label className="block text-sm font-bold text-gray-700 mb-1">Motif / Description</label>
-                  <input type="text" value={newEventDesc} onChange={e => setNewEventDesc(e.target.value)} placeholder="Titre de l'action" className="w-full border-2 border-gray-200 rounded-xl p-3 focus:border-interact-blue" required />
+                  <input type="text" value={newEventDesc} onChange={e => setNewEventDesc(e.target.value)} placeholder="Titre ou description courte de l'action" className="w-full border-2 border-gray-200 rounded-xl p-3 focus:border-interact-blue" required />
                </div>
                <button type="submit" disabled={isUpdating} className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold flex justify-center items-center gap-3 mt-6 shadow-xl text-lg">
                   {isUpdating ? <Loader2 className="animate-spin" size={24} /> : 'Ajouter au Calendrier'}
@@ -999,7 +975,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ======================= DAY VIEW EVENTS MODAL (GOOGLE MAPS) ======================= */}
+      {/* ======================= DAY VIEW EVENTS MODAL (GOOGLE MAPS CONDITIONAL) ======================= */}
       {showDayEventsModal && (
         <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in">
           <div className="bg-white rounded-3xl shadow-2xl max-w-xl w-full max-h-[90vh] overflow-y-auto">
@@ -1023,15 +999,16 @@ export default function Dashboard() {
                        </div>
                        <p className="text-gray-600 font-medium text-sm flex items-center gap-2 mb-4"><MapPin size={16}/> {ev.place}</p>
                        
-                       {/* GOOGLE MAPS IFRAME INTEGRATION */}
-                       <div className="rounded-xl overflow-hidden border border-gray-200 shadow-inner mb-3">
-                           <iframe width="100%" height="200" style={{border:0}} loading="lazy" allowFullScreen src={`https://maps.google.com/maps?q=${encodeURIComponent(ev.place)}&output=embed`}></iframe>
-                       </div>
-                       
+                       {/* GOOGLE MAPS UNIQUEMENT SI LE LIEN EST RENSEIGNÉ */}
                        {ev.google_maps_link && (
-                           <a href={ev.google_maps_link} target="_blank" rel="noopener noreferrer" className="bg-white border border-gray-200 hover:border-interact-blue hover:text-interact-blue text-gray-700 font-bold py-2 px-4 rounded-xl text-sm flex items-center justify-center gap-2 transition w-full">
-                               <ExternalLink size={16} /> Ouvrir dans Google Maps
-                           </a>
+                           <>
+                               <div className="rounded-xl overflow-hidden border border-gray-200 shadow-inner mb-3">
+                                   <iframe width="100%" height="200" style={{border:0}} loading="lazy" allowFullScreen src={`https://maps.google.com/maps?q=${encodeURIComponent(ev.place)}&output=embed`}></iframe>
+                               </div>
+                               <a href={ev.google_maps_link} target="_blank" rel="noopener noreferrer" className="bg-white border border-gray-200 hover:border-interact-blue hover:text-interact-blue text-gray-700 font-bold py-2 px-4 rounded-xl text-sm flex items-center justify-center gap-2 transition w-full">
+                                   <ExternalLink size={16} /> Ouvrir dans Google Maps
+                               </a>
+                           </>
                        )}
                    </div>
                ))}
