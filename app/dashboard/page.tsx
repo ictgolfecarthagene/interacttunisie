@@ -4,9 +4,9 @@ import { supabase } from '../../lib/supabase';
 import { useRouter } from 'next/navigation';
 
 import { useCorbado, CorbadoAuth, CorbadoProvider } from '@corbado/react';
-import { Trophy, Users, FileText, Plus, CheckCircle, Loader2, Fingerprint, Medal, Trash2, Building2, LogOut } from 'lucide-react';
+import { Trophy, Users, FileText, Plus, CheckCircle, Loader2, Fingerprint, Medal, Trash2, Building2, LogOut, MessageSquare } from 'lucide-react';
 
-const EXECUTIVE_ROLES = ['Coordinateur National', 'Vice Coordinateur', 'Secrétaire National', 'Secrétaire National Adjoint', 'Trésorier', 'Chef de Protocole'];
+const COMITE_NATIONAL_ROLES = ['Coordinateur National', 'Vice Coordinateur', 'Secrétaire National', 'Secrétaire National Adjoint', 'Trésorier', 'Chef de Protocole'];
 const ZONES = ['Nord 1', 'Nord 2', 'Nord 3', 'Nord 4', 'Nord 5', 'Nord 6', 'Nord 7', 'Centre', 'Sud'];
 
 export default function Dashboard() {
@@ -14,17 +14,21 @@ export default function Dashboard() {
   const [user, setUser] = useState<any>(null);
   const [isAppLoading, setIsAppLoading] = useState(true);
   
-  // Correction: Plus besoin de zoneClubs, on utilise allClubs partout intelligemment
   const [allClubs, setAllClubs] = useState<any[]>([]); 
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [visits, setVisits] = useState<any[]>([]); 
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
   const [isUpdating, setIsUpdating] = useState(false);
   
-  const [activeTab, setActiveTab] = useState<'leaderboard' | 'users' | 'clubs' | 'securite'>('leaderboard');
+  const [activeTab, setActiveTab] = useState<'leaderboard' | 'users' | 'clubs' | 'securite' | 'my_club'>('leaderboard');
   const [selectedZoneFilter, setSelectedZoneFilter] = useState('Toutes les zones');
   
   const [showReportModal, setShowReportModal] = useState(false);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [selectedVisitForFeedback, setSelectedVisitForFeedback] = useState<any>(null);
+  const [feedbackRating, setFeedbackRating] = useState('');
+  const [feedbackText, setFeedbackText] = useState('');
+  
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const [visitReason, setVisitReason] = useState('Réunion Statutaire');
@@ -39,13 +43,16 @@ export default function Dashboard() {
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserRole, setNewUserRole] = useState('PENDING');
   const [newUserZone, setNewUserZone] = useState('');
+  const [newUserClub, setNewUserClub] = useState('');
 
   const router = useRouter();
-  const isExecutive = user ? EXECUTIVE_ROLES.includes(user.role) : false;
+  const isComiteNational = user ? COMITE_NATIONAL_ROLES.includes(user.role) : false;
 
-  const fetchVisitsAndLeaderboard = async (role: string, zone: string) => {
+  const fetchVisitsAndLeaderboard = async (role: string, zone: string, club: string) => {
     let query = supabase.from('visits').select('*').order('created_at', { ascending: false });
     if (role === 'DRC') query = query.eq('zone', zone);
+    if (role === 'Représentant Club') query = query.eq('club_name', club);
+    
     const { data, error } = await query;
     if (data && !error) {
       setVisits(data);
@@ -88,12 +95,12 @@ export default function Dashboard() {
       const { data: userData } = await supabase.from('users').select('*').eq('email', activeEmail).single();
       if (userData && isMounted) {
         setUser(userData);
-        await fetchVisitsAndLeaderboard(userData.role, userData.zone);
-        
-        // CORRECTION MAJEURE: On charge TOUS les clubs pour tout le monde instantanément
         await fetchAllClubs(); 
+        await fetchVisitsAndLeaderboard(userData.role, userData.zone, userData.club);
         
-        if (EXECUTIVE_ROLES.includes(userData.role)) {
+        if (userData.role === 'Représentant Club') setActiveTab('my_club');
+        
+        if (COMITE_NATIONAL_ROLES.includes(userData.role)) {
           await fetchAllUsers();
         }
       }
@@ -103,30 +110,39 @@ export default function Dashboard() {
     return () => { isMounted = false; clearTimeout(failsafeTimer); };
   }, [isAuthenticated, corbadoUser, corbadoLoading, router]);
 
+  // Handle Account Creation with Cascading Dropdowns
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUserName || !newUserEmail) return alert("Veuillez remplir le nom et l'email.");
     setIsUpdating(true);
-    const payload = { full_name: newUserName, email: newUserEmail.toLowerCase(), role: newUserRole, zone: newUserRole === 'DRC' ? newUserZone : null };
+    
+    const payload = { 
+        full_name: newUserName, 
+        email: newUserEmail.toLowerCase(), 
+        role: newUserRole, 
+        zone: ['DRC', 'Représentant Club'].includes(newUserRole) ? newUserZone : null,
+        club: newUserRole === 'Représentant Club' ? newUserClub : null
+    };
+
     const { error } = await supabase.from('users').insert(payload);
     if (!error) {
-      setNewUserName(''); setNewUserEmail(''); setNewUserRole('PENDING'); setNewUserZone('');
+      setNewUserName(''); setNewUserEmail(''); setNewUserRole('PENDING'); setNewUserZone(''); setNewUserClub('');
       await fetchAllUsers(); alert("Membre pré-enregistré avec succès !");
     } else alert("Erreur de base de données. Cet email est peut-être déjà enregistré.");
     setIsUpdating(false);
   };
 
-  const handleUpdateUser = async (userId: string, field: 'role' | 'zone', value: string) => {
+  const handleUpdateUser = async (userId: string, field: 'role' | 'zone' | 'club', value: string) => {
     setIsUpdating(true);
     const updateData: any = { [field]: value };
-    if (field === 'role' && value !== 'DRC') updateData.zone = null;
+    if (field === 'role' && value !== 'DRC' && value !== 'Représentant Club') {
+        updateData.zone = null;
+        updateData.club = null;
+    }
     const { error } = await supabase.from('users').update(updateData).eq('id', userId);
     if (!error) {
       setAllUsers(allUsers.map(u => u.id === userId ? { ...u, ...updateData } : u));
-      if (userId === user.id) {
-        setUser({ ...user, ...updateData });
-        if (field === 'role' && !EXECUTIVE_ROLES.includes(value)) setActiveTab('leaderboard');
-      }
+      if (userId === user.id) setUser({ ...user, ...updateData });
     } else alert("Erreur de mise à jour.");
     setIsUpdating(false);
   };
@@ -142,14 +158,6 @@ export default function Dashboard() {
     setIsUpdating(false);
   };
 
-  const handleDeleteReport = async (reportId: string) => {
-    if (!window.confirm(`Voulez-vous vraiment supprimer ce rapport ?`)) return;
-    setIsUpdating(true);
-    const { error } = await supabase.from('visits').delete().eq('id', reportId);
-    if (!error) fetchVisitsAndLeaderboard(user.role, user.zone);
-    setIsUpdating(false);
-  };
-
   const handleAddClub = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newClubName || !newClubZone) return alert("Veuillez remplir le nom et la zone.");
@@ -157,15 +165,7 @@ export default function Dashboard() {
     const { error } = await supabase.from('clubs').insert({ name: newClubName, zone: newClubZone });
     if (!error) {
       setNewClubName(''); setNewClubZone(''); await fetchAllClubs(); alert("Club ajouté avec succès !");
-    } else alert("Erreur lors de l'ajout. Vérifiez votre base de données.");
-    setIsUpdating(false);
-  };
-
-  const handleDeleteClub = async (clubId: string, clubName: string) => {
-    if (!window.confirm(`Voulez-vous vraiment supprimer le club ${clubName} ?`)) return;
-    setIsUpdating(true);
-    const { error } = await supabase.from('clubs').delete().eq('id', clubId);
-    if (!error) await fetchAllClubs();
+    } else alert("Erreur lors de l'ajout.");
     setIsUpdating(false);
   };
 
@@ -177,8 +177,6 @@ export default function Dashboard() {
     setIsSubmitting(true);
     const averageScore = allScores.reduce((a, b) => a + b, 0) / allScores.length;
     const finalReason = visitReason === 'Autre' ? specificReason : visitReason;
-
-    // Détection de la zone du club sélectionné
     const currentClub = allClubs.find(c => c.name === selectedClub);
     const reportZone = currentClub ? currentClub.zone : (user?.zone || 'Zone Non Définie');
 
@@ -192,14 +190,32 @@ export default function Dashboard() {
     });
     
     if (!error) {
-       try {
-          await fetch('/api/sheets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-       } catch (sheetError) { console.error("Erreur Google Sheets"); }
+       try { await fetch('/api/sheets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); } catch (e) { }
        alert("Rapport soumis avec succès ! 🎉");
        setShowReportModal(false); setSelectedClub(''); setSpecificReason('');
        setScores({ etat: '', effectif: '', organisation: '', deroulement: '', professionnalisme: '' });
-       fetchVisitsAndLeaderboard(user.role, user.zone);
-    } else { alert(`Erreur: Données rejetées par Supabase.`); }
+       fetchVisitsAndLeaderboard(user.role, user.zone, user.club);
+    } else { alert(`Erreur lors de la soumission.`); }
+    setIsSubmitting(false);
+  };
+
+  const handleSubmitFeedback = async () => {
+    if (!feedbackRating) return alert("Veuillez donner une note au DRC.");
+    setIsSubmitting(true);
+    
+    const payload = {
+        visit_id: selectedVisitForFeedback.id,
+        club_name: user.club,
+        drc_name: selectedVisitForFeedback.visitor_name,
+        rating: Number(feedbackRating),
+        feedback_text: feedbackText
+    };
+
+    const { error } = await supabase.from('drc_feedback').insert(payload);
+    if (!error) {
+        alert("Feedback envoyé au Comité National avec succès ! 🔒");
+        setShowFeedbackModal(false); setFeedbackRating(''); setFeedbackText('');
+    } else alert("Erreur lors de l'envoi.");
     setIsSubmitting(false);
   };
 
@@ -229,7 +245,9 @@ export default function Dashboard() {
           <div className="flex items-center gap-5">
             <div className="text-right hidden md:block">
               <p className="text-gray-900 font-bold leading-none">{user.full_name}</p>
-              <p className="text-xs text-gray-500 font-medium mt-1">{user.role === 'DRC' ? `DRC ${user.zone}` : user.role}</p>
+              <p className="text-xs text-gray-500 font-medium mt-1">
+                {user.role === 'DRC' ? `DRC ${user.zone}` : user.role === 'Représentant Club' ? `Rep. ${user.club}` : user.role}
+              </p>
             </div>
             <button onClick={handleLogout} className="flex items-center gap-2 bg-white text-gray-600 border border-gray-200 hover:bg-red-50 hover:text-red-600 px-4 py-2 rounded-xl text-sm font-bold shadow-sm transition-all"><LogOut size={16} className="hidden sm:block" /> Déconnexion</button>
           </div>
@@ -239,35 +257,84 @@ export default function Dashboard() {
       <main className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8 space-y-8">
         
         <div className="flex bg-white p-1.5 rounded-2xl shadow-sm border border-gray-200 w-fit overflow-x-auto mx-auto sm:mx-0">
-          {isExecutive && (
+          {isComiteNational && (
             <>
               <button onClick={() => setActiveTab('leaderboard')} className={`flex items-center whitespace-nowrap gap-2 py-2.5 px-6 rounded-xl font-bold text-sm transition-all duration-200 ${activeTab === 'leaderboard' ? 'bg-gray-900 text-white shadow-md transform scale-[1.02]' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}><Trophy size={18} /> Classement</button>
-              <button onClick={() => setActiveTab('users')} className={`flex items-center whitespace-nowrap gap-2 py-2.5 px-6 rounded-xl font-bold text-sm transition-all duration-200 ${activeTab === 'users' ? 'bg-gray-900 text-white shadow-md transform scale-[1.02]' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}><Users size={18} /> Accès</button>
-              <button onClick={() => setActiveTab('clubs')} className={`flex items-center whitespace-nowrap gap-2 py-2.5 px-6 rounded-xl font-bold text-sm transition-all duration-200 ${activeTab === 'clubs' ? 'bg-gray-900 text-white shadow-md transform scale-[1.02]' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}><Building2 size={18} /> Clubs</button>
+              <button onClick={() => setActiveTab('users')} className={`flex items-center whitespace-nowrap gap-2 py-2.5 px-6 rounded-xl font-bold text-sm transition-all duration-200 ${activeTab === 'users' ? 'bg-gray-900 text-white shadow-md transform scale-[1.02]' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}><Users size={18} /> Accès & Rôles</button>
+              <button onClick={() => setActiveTab('clubs')} className={`flex items-center whitespace-nowrap gap-2 py-2.5 px-6 rounded-xl font-bold text-sm transition-all duration-200 ${activeTab === 'clubs' ? 'bg-gray-900 text-white shadow-md transform scale-[1.02]' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}><Building2 size={18} /> Gestion Clubs</button>
             </>
           )}
           {user.role === 'DRC' && (
             <button onClick={() => setActiveTab('leaderboard')} className={`flex items-center whitespace-nowrap gap-2 py-2.5 px-6 rounded-xl font-bold text-sm transition-all duration-200 ${activeTab === 'leaderboard' ? 'bg-gray-900 text-white shadow-md transform scale-[1.02]' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}><FileText size={18} /> Ma Zone</button>
           )}
-          <button onClick={() => setActiveTab('securite')} className={`flex items-center whitespace-nowrap gap-2 py-2.5 px-6 rounded-xl font-bold text-sm transition-all duration-200 ${activeTab === 'securite' ? 'bg-interact-blue text-white shadow-md transform scale-[1.02]' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}><Fingerprint size={18} /> Sécurité FaceID</button>
+          {user.role === 'Représentant Club' && (
+            <button onClick={() => setActiveTab('my_club')} className={`flex items-center whitespace-nowrap gap-2 py-2.5 px-6 rounded-xl font-bold text-sm transition-all duration-200 ${activeTab === 'my_club' ? 'bg-gray-900 text-white shadow-md transform scale-[1.02]' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}><Building2 size={18} /> Mon Club</button>
+          )}
+          <button onClick={() => setActiveTab('securite')} className={`flex items-center whitespace-nowrap gap-2 py-2.5 px-6 rounded-xl font-bold text-sm transition-all duration-200 ${activeTab === 'securite' ? 'bg-interact-blue text-white shadow-md transform scale-[1.02]' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}><Fingerprint size={18} /> FaceID</button>
         </div>
 
-        {isExecutive && activeTab === 'leaderboard' && (
+        {/* ======================= REPRÉSENTANT CLUB VIEW ======================= */}
+        {user.role === 'Représentant Club' && activeTab === 'my_club' && (
+           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+             <div className="bg-white p-8 md:p-10 rounded-3xl shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center relative overflow-hidden">
+               <div className="absolute left-0 top-0 bottom-0 w-3 bg-interact-blue"></div>
+               <div>
+                 <h2 className="text-3xl font-extrabold text-gray-900 mb-2">{user.club}</h2>
+                 <p className="text-gray-500 font-medium text-lg">Zone {user.zone} | Vous avez reçu <span className="text-interact-blue font-black">{visits.length}</span> visites officielles.</p>
+               </div>
+             </div>
+
+             <div className="bg-white rounded-3xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="p-6 md:p-8 border-b border-gray-100 flex items-center gap-3">
+                <div className="bg-blue-100 p-2 rounded-xl text-interact-blue"><CheckCircle size={20} /></div>
+                <h3 className="text-xl font-bold text-gray-900">Visites du DRC</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-gray-50/50 text-gray-400 font-bold border-b border-gray-100 uppercase tracking-widest text-xs">
+                    <tr><th className="px-8 py-5">Date</th><th className="px-8 py-5">Motif</th><th className="px-8 py-5">Visité par (DRC)</th><th className="px-8 py-5 text-right">Feedback Privé</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {visits.length > 0 ? visits.map(v => (
+                      <tr key={v.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-8 py-5 text-gray-500 font-medium">{new Date(v.created_at).toLocaleDateString('fr-FR')}</td>
+                        <td className="px-8 py-5 text-gray-800 font-medium">{v.reason}</td>
+                        <td className="px-8 py-5 font-bold text-gray-900 text-base">{v.visitor_name}</td>
+                        <td className="px-8 py-5 text-right">
+                           <button onClick={() => {setSelectedVisitForFeedback(v); setShowFeedbackModal(true);}} className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-2 ml-auto transition-colors">
+                             <MessageSquare size={14} /> Évaluer le DRC
+                           </button>
+                        </td>
+                      </tr>
+                    )) : (
+                      <tr><td colSpan={4} className="p-16 text-center text-gray-400 font-medium">Aucune visite enregistrée pour le moment.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+           </div>
+        )}
+
+        {/* ======================= COMITE NATIONAL & DRC VIEWS ======================= */}
+        {['leaderboard'].includes(activeTab) && !['Représentant Club'].includes(user.role) && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            {/* Same Leaderboard View logic as before */}
             <div className="bg-white rounded-3xl shadow-sm border border-gray-200 overflow-hidden">
               <div className="p-6 md:p-8 border-b border-gray-100 flex flex-col md:flex-row justify-between items-start md:items-center bg-gradient-to-r from-gray-50 to-white gap-4">
                 <div>
-                  <h2 className="text-2xl font-extrabold text-gray-900 flex items-center gap-3"><Trophy className="text-yellow-500" size={28} /> Classement National</h2>
+                  <h2 className="text-2xl font-extrabold text-gray-900 flex items-center gap-3"><Trophy className="text-yellow-500" size={28} /> {isComiteNational ? 'Classement National' : `Zone ${user.zone}`}</h2>
                 </div>
                 <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
-                  {/* BOUTON TEST AJOUTÉ POUR L'EXÉCUTIF */}
                   <button onClick={() => setShowReportModal(true)} className="bg-gray-900 hover:bg-black text-white px-5 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-md transition-all">
-                    <Plus size={20} /> Rapport Rapide
+                    <Plus size={20} /> Nouveau Rapport
                   </button>
-                  <select value={selectedZoneFilter} onChange={(e) => setSelectedZoneFilter(e.target.value)} className="border-gray-200 rounded-xl text-gray-700 py-3 px-4 border-2 outline-none font-bold focus:border-interact-blue focus:ring-4 cursor-pointer">
-                    <option value="Toutes les zones">🌍 Toutes les zones</option>
-                    {ZONES.map(zone => <option key={zone} value={zone}>📍 {zone}</option>)}
-                  </select>
+                  {isComiteNational && (
+                    <select value={selectedZoneFilter} onChange={(e) => setSelectedZoneFilter(e.target.value)} className="border-gray-200 rounded-xl text-gray-700 py-3 px-4 border-2 outline-none font-bold focus:border-interact-blue focus:ring-4 cursor-pointer">
+                      <option value="Toutes les zones">🌍 Toutes les zones</option>
+                      {ZONES.map(zone => <option key={zone} value={zone}>📍 {zone}</option>)}
+                    </select>
+                  )}
                 </div>
               </div>
               <div className="overflow-x-auto">
@@ -278,8 +345,8 @@ export default function Dashboard() {
                   <tbody className="divide-y divide-gray-100">
                     {displayedLeaderboard.length > 0 ? displayedLeaderboard.map((club, index) => (
                       <tr key={index} className="hover:bg-blue-50/50 transition-colors">
-                        <td className="px-8 py-5 font-black text-gray-400 flex items-center gap-3">#{index + 1}</td>
-                        <td className="px-8 py-5 font-bold text-gray-900 text-base">{club.club_name}</td>
+                        <td className="px-8 py-5 font-black text-gray-400">#{index + 1}</td>
+                        <td className="px-8 py-5 font-bold text-gray-900">{club.club_name}</td>
                         <td className="px-8 py-5"><span className="bg-gray-100 text-gray-600 px-3 py-1.5 rounded-lg text-xs font-bold">{club.zone}</span></td>
                         <td className="px-8 py-5 text-center font-bold text-gray-500">{club.count}</td>
                         <td className="px-8 py-5 font-black text-interact-blue text-right text-xl">{club.average}</td>
@@ -289,7 +356,7 @@ export default function Dashboard() {
                 </table>
               </div>
             </div>
-
+            
             <div className="bg-white rounded-3xl shadow-sm border border-gray-200 overflow-hidden">
               <div className="p-6 md:p-8 border-b border-gray-100 flex items-center gap-3">
                 <div className="bg-gray-100 p-2 rounded-xl text-gray-600"><FileText size={20} /></div>
@@ -320,139 +387,70 @@ export default function Dashboard() {
           </div>
         )}
 
-        {isExecutive && activeTab === 'users' && (
+        {/* ======================= USER MANAGEMENT (WITH CASCADING DROPDOWNS) ======================= */}
+        {isComiteNational && activeTab === 'users' && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="bg-gradient-to-br from-white to-gray-50 rounded-3xl shadow-sm border border-gray-200 overflow-hidden p-6 md:p-8">
-              <h2 className="text-2xl font-extrabold text-gray-900 flex items-center gap-3 mb-6"><div className="bg-green-100 p-2 rounded-xl text-green-600"><Plus size={20} /></div> Pré-enregistrer un Membre</h2>
-              <form onSubmit={handleAddUser} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+              <h2 className="text-2xl font-extrabold text-gray-900 flex items-center gap-3 mb-6"><div className="bg-green-100 p-2 rounded-xl text-green-600"><Plus size={20} /></div> Assigner un Compte</h2>
+              <form onSubmit={handleAddUser} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
                 <input type="text" value={newUserName} onChange={e => setNewUserName(e.target.value)} placeholder="Prénom et Nom" className="lg:col-span-1 border-2 border-gray-200 rounded-xl p-3.5 focus:border-interact-blue" required />
                 <input type="email" value={newUserEmail} onChange={e => setNewUserEmail(e.target.value)} placeholder="Adresse email" className="lg:col-span-1 border-2 border-gray-200 rounded-xl p-3.5 focus:border-interact-blue" required />
+                
                 <select value={newUserRole} onChange={e => setNewUserRole(e.target.value)} className="lg:col-span-1 border-2 border-gray-200 rounded-xl p-3.5 focus:border-interact-blue bg-white" required>
                   <option value="PENDING">Sans Rôle</option>
                   <option value="DRC">DRC</option>
-                  <optgroup label="Bureau Exécutif">{EXECUTIVE_ROLES.map(role => <option key={role} value={role}>{role}</option>)}</optgroup>
+                  <option value="Représentant Club">Représentant Club</option>
+                  <optgroup label="Comité National">{COMITE_NATIONAL_ROLES.map(role => <option key={role} value={role}>{role}</option>)}</optgroup>
                 </select>
-                <div className="lg:col-span-1">
-                  {newUserRole === 'DRC' ? (
-                    <select value={newUserZone} onChange={e => setNewUserZone(e.target.value)} className="w-full border-2 border-interact-blue/30 rounded-xl p-3.5 focus:border-interact-blue bg-blue-50/50" required>
+
+                {/* Cascading Logic: Zone */}
+                {['DRC', 'Représentant Club'].includes(newUserRole) && (
+                    <select value={newUserZone} onChange={e => setNewUserZone(e.target.value)} className="lg:col-span-1 border-2 border-interact-blue/30 rounded-xl p-3.5 focus:border-interact-blue bg-blue-50/50" required>
                       <option value="">Sélectionner Zone...</option>
                       {ZONES.map(z => <option key={z} value={z}>{z}</option>)}
                     </select>
-                  ) : (<div className="w-full border-2 border-gray-100 rounded-xl p-3.5 bg-gray-50 text-gray-400 text-center">Pas de zone requise</div>)}
-                </div>
-                <button type="submit" disabled={isUpdating} className="lg:col-span-1 bg-gray-900 hover:bg-black text-white font-bold py-3.5 px-6 rounded-xl shadow-lg">Ajouter</button>
+                )}
+
+                {/* Cascading Logic: Club */}
+                {newUserRole === 'Représentant Club' && newUserZone !== '' && (
+                    <select value={newUserClub} onChange={e => setNewUserClub(e.target.value)} className="lg:col-span-1 border-2 border-interact-blue/30 rounded-xl p-3.5 focus:border-interact-blue bg-blue-50/50" required>
+                      <option value="">Sélectionner Club...</option>
+                      {allClubs.filter(c => c.zone === newUserZone).map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                    </select>
+                )}
+
+                <button type="submit" disabled={isUpdating} className="lg:col-span-1 bg-gray-900 hover:bg-black text-white font-bold py-3.5 px-6 rounded-xl shadow-lg ml-auto w-full">Ajouter</button>
               </form>
             </div>
 
             <div className="bg-white rounded-3xl shadow-sm border border-gray-200 overflow-hidden">
-               <div className="p-6 md:p-8 border-b border-gray-100 flex items-center gap-3">
+              <div className="p-6 md:p-8 border-b border-gray-100 flex items-center gap-3">
                 <div className="bg-gray-100 p-2 rounded-xl text-gray-600"><Users size={20} /></div>
                 <h2 className="text-xl font-bold text-gray-900">Gestion des Accès Existants</h2>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left">
                   <thead className="bg-gray-50/50 text-gray-400 font-bold border-b border-gray-100 uppercase tracking-widest text-xs">
-                    <tr><th className="px-8 py-5">Nom</th><th className="px-8 py-5">Email</th><th className="px-8 py-5">Rôle</th><th className="px-8 py-5">Zone (DRC)</th><th className="px-8 py-5 text-right">Action</th></tr>
+                    <tr><th className="px-8 py-5">Nom</th><th className="px-8 py-5">Email</th><th className="px-8 py-5">Rôle</th><th className="px-8 py-5">Affectation</th><th className="px-8 py-5 text-right">Action</th></tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {allUsers.map((u) => (
                       <tr key={u.id} className="hover:bg-gray-50">
                         <td className="px-8 py-4 font-bold text-gray-900">{u.full_name}</td>
                         <td className="px-8 py-4 text-gray-500 font-medium">{u.email}</td>
+                        <td className="px-8 py-4 text-gray-700 font-medium">{u.role}</td>
                         <td className="px-8 py-4">
-                          <select disabled={isUpdating} value={u.role || 'PENDING'} onChange={(e) => handleUpdateUser(u.id, 'role', e.target.value)} className="border-2 border-gray-200 rounded-xl p-2.5 bg-white w-full max-w-xs cursor-pointer">
-                            <option value="PENDING">En attente</option>
-                            <option value="DRC">Directeur de Région (DRC)</option>
-                            <optgroup label="Bureau Exécutif">{EXECUTIVE_ROLES.map(role => <option key={role} value={role}>{role}</option>)}</optgroup>
-                          </select>
-                        </td>
-                        <td className="px-8 py-4">
-                          <select disabled={isUpdating || u.role !== 'DRC'} value={u.zone || ''} onChange={(e) => handleUpdateUser(u.id, 'zone', e.target.value)} className={`border-2 rounded-xl p-2.5 w-36 ${u.role !== 'DRC' ? 'bg-gray-50 border-gray-100' : 'bg-white border-gray-200'}`}>
-                            <option value="">-- Zone --</option>
-                            {ZONES.map(z => <option key={z} value={z}>{z}</option>)}
-                          </select>
+                           {u.role === 'DRC' ? <span className="bg-blue-50 text-interact-blue px-3 py-1 rounded-md font-bold text-xs">{u.zone}</span> : 
+                            u.role === 'Représentant Club' ? <span className="bg-green-50 text-green-700 px-3 py-1 rounded-md font-bold text-xs">{u.club}</span> : 
+                            <span className="text-gray-400 text-xs">N/A</span>}
                         </td>
                         <td className="px-8 py-4 text-right">
-                          <button onClick={() => handleDeleteUser(u.id, u.full_name)} disabled={isUpdating} className="text-red-500 border-2 border-red-100 px-4 py-2 rounded-xl text-xs font-bold">Supprimer</button>
+                          <button onClick={() => handleDeleteUser(u.id, u.full_name)} disabled={isUpdating} className="text-red-500 border-2 border-red-100 px-4 py-2 rounded-xl text-xs font-bold">Retirer</button>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {isExecutive && activeTab === 'clubs' && (
-          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="bg-gradient-to-br from-white to-gray-50 rounded-3xl shadow-sm border border-gray-200 overflow-hidden p-6 md:p-8">
-              <h2 className="text-2xl font-extrabold text-gray-900 flex items-center gap-3 mb-6"><div className="bg-green-100 p-2 rounded-xl text-green-600"><Plus size={20} /></div> Ajouter un Club</h2>
-              <form onSubmit={handleAddClub} className="flex flex-col md:flex-row gap-4">
-                <input type="text" value={newClubName} onChange={e => setNewClubName(e.target.value)} placeholder="Nom du Club officiel" className="flex-1 border-2 border-gray-200 rounded-xl p-3.5 focus:border-interact-blue" required />
-                <select value={newClubZone} onChange={e => setNewClubZone(e.target.value)} className="w-full md:w-64 border-2 border-gray-200 rounded-xl p-3.5 focus:border-interact-blue bg-white" required>
-                  <option value="">Sélectionner la Zone...</option>
-                  {ZONES.map(z => <option key={z} value={z}>{z}</option>)}
-                </select>
-                <button type="submit" disabled={isUpdating} className="bg-gray-900 text-white font-bold py-3.5 px-8 rounded-xl">Ajouter</button>
-              </form>
-            </div>
-            
-            <div className="bg-white rounded-3xl shadow-sm border border-gray-200 overflow-hidden">
-               <div className="p-6 md:p-8 border-b border-gray-100 flex items-center gap-3">
-                <div className="bg-gray-100 p-2 rounded-xl text-gray-600"><Building2 size={20} /></div>
-                <h2 className="text-xl font-bold text-gray-900">Liste des Clubs Officiels</h2>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm text-left">
-                  <thead className="bg-gray-50/50 text-gray-400 font-bold border-b border-gray-100 uppercase tracking-widest text-xs">
-                    <tr><th className="px-8 py-5">Nom du Club</th><th className="px-8 py-5">Zone Actuelle</th><th className="px-8 py-5 text-right">Action</th></tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {allClubs.map((c) => (
-                      <tr key={c.id} className="hover:bg-gray-50">
-                        <td className="px-8 py-5 font-bold text-gray-900 text-base">{c.name}</td>
-                        <td className="px-8 py-5"><span className="bg-blue-50 text-interact-blue px-3 py-1.5 rounded-lg text-xs font-bold">{c.zone}</span></td>
-                        <td className="px-8 py-5 text-right">
-                          <button onClick={() => handleDeleteClub(c.id, c.name)} disabled={isUpdating} className="text-red-500 border-2 border-red-100 px-4 py-2 rounded-xl text-xs font-bold">Retirer</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {user.role === 'DRC' && activeTab === 'leaderboard' && (
-          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="bg-white p-8 md:p-10 rounded-3xl shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center relative overflow-hidden">
-              <div className="absolute left-0 top-0 bottom-0 w-3 bg-interact-blue"></div>
-              <div>
-                <h2 className="text-3xl font-extrabold text-gray-900 mb-2">Zone {user.zone}</h2>
-                <p className="text-gray-500 font-medium text-lg">Vous avez soumis <span className="text-interact-blue font-black">{visits.length}</span> rapports officiels.</p>
-              </div>
-              <button onClick={() => setShowReportModal(true)} className="mt-6 md:mt-0 bg-gray-900 text-white px-8 py-4 rounded-2xl shadow-xl font-bold flex items-center gap-3">
-                <Plus size={22} /> Nouveau Rapport
-              </button>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'securite' && (
-          <div className="animate-in fade-in zoom-in-95 duration-500 bg-white rounded-3xl shadow-sm border border-gray-200 overflow-hidden p-8 md:p-16 text-center max-w-2xl mx-auto mt-10">
-            <div className="mx-auto bg-gradient-to-br from-gray-900 to-black w-24 h-24 rounded-3xl flex items-center justify-center mb-8 shadow-2xl transform rotate-3">
-              <Fingerprint className="text-white transform -rotate-3" size={48} />
-            </div>
-            <h2 className="text-3xl font-extrabold text-gray-900 mb-4">Enregistrer un Appareil</h2>
-            <div className="border-2 border-gray-100 rounded-3xl p-8 bg-gray-50 shadow-inner flex justify-center items-center">
-              <div className="w-full max-w-sm">
-                <p className="text-xs font-black text-gray-400 mb-6 uppercase tracking-widest">Zone Biométrique Sécurisée</p>
-                {/* @ts-ignore */}
-                <CorbadoProvider projectId={process.env.NEXT_PUBLIC_CORBADO_PROJECT_ID || "pro-6404309444468139215"}>
-                  <CorbadoAuth onLoggedIn={() => alert('FaceID activé avec succès !')} />
-                </CorbadoProvider>
               </div>
             </div>
           </div>
@@ -460,6 +458,35 @@ export default function Dashboard() {
 
       </main>
 
+      {/* ======================= FEEDBACK MODAL (FOR REPRESENTATIVES) ======================= */}
+      {showFeedbackModal && selectedVisitForFeedback && (
+        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-8 animate-in zoom-in-95 duration-300">
+            <h3 className="text-2xl font-extrabold text-gray-900 mb-2">Évaluer le DRC</h3>
+            <p className="text-sm text-gray-500 mb-6">Ce feedback est <b className="text-gray-800">100% anonyme pour le DRC</b>. Seul le Comité National y a accès.</p>
+            
+            <div className="space-y-4">
+               <div>
+                 <label className="block text-sm font-bold text-gray-900 mb-2">Note sur le professionnalisme du DRC (/10)</label>
+                 <input type="number" min="0" max="10" value={feedbackRating} onChange={(e) => setFeedbackRating(e.target.value)} className="w-full border-2 border-gray-200 rounded-xl p-4 text-center font-black text-interact-blue text-2xl focus:border-interact-blue outline-none" placeholder="/ 10" />
+               </div>
+               <div>
+                 <label className="block text-sm font-bold text-gray-900 mb-2">Commentaire libre (Optionnel)</label>
+                 <textarea value={feedbackText} onChange={(e) => setFeedbackText(e.target.value)} className="w-full border-2 border-gray-200 rounded-xl p-4 focus:border-interact-blue outline-none text-sm h-32" placeholder="Comment s'est passée la visite ? Le DRC a-t-il été utile ?"></textarea>
+               </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+               <button onClick={() => setShowFeedbackModal(false)} className="flex-1 bg-gray-100 text-gray-600 font-bold py-4 rounded-2xl">Annuler</button>
+               <button onClick={handleSubmitFeedback} disabled={isSubmitting} className="flex-1 bg-gray-900 text-white font-bold py-4 rounded-2xl flex justify-center items-center gap-2">
+                 {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : "Envoyer en secret"}
+               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================= REPORT MODAL ======================= */}
       {showReportModal && (
         <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl shadow-2xl max-w-xl w-full max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-300">
@@ -469,11 +496,9 @@ export default function Dashboard() {
             </div>
             
             <div className="p-6 md:p-8 space-y-6">
-              
-              {/* LA LISTE DÉROULANTE INTELLIGENTE */}
-              <select value={selectedClub} onChange={(e) => setSelectedClub(e.target.value)} className="w-full border-2 border-gray-200 p-4 rounded-xl bg-gray-50 outline-none focus:border-interact-blue focus:ring-4 focus:ring-blue-50 font-bold text-gray-800 transition-all cursor-pointer">
+              <select value={selectedClub} onChange={(e) => setSelectedClub(e.target.value)} className="w-full border-2 border-gray-200 p-4 rounded-xl bg-gray-50 outline-none focus:border-interact-blue font-bold text-gray-800">
                 <option value="">-- Choisir un club --</option>
-                {isExecutive 
+                {isComiteNational 
                   ? allClubs.map((club) => <option key={club.id} value={club.name}>{club.name} ({club.zone})</option>)
                   : allClubs.filter(c => c.zone === user?.zone).map((club) => <option key={club.id} value={club.name}>{club.name}</option>)
                 }
@@ -500,7 +525,7 @@ export default function Dashboard() {
               </div>
               
               <button onClick={handleSubmitReport} disabled={isSubmitting} className="w-full bg-gray-900 text-white py-5 rounded-2xl font-bold flex justify-center items-center gap-3 mt-6 shadow-xl text-lg">
-                {isSubmitting ? <><Loader2 className="animate-spin" size={24} /> Enregistrement...</> : 'Soumettre le rapport officiel'}
+                {isSubmitting ? <Loader2 className="animate-spin" size={24} /> : 'Soumettre le rapport officiel'}
               </button>
             </div>
           </div>
