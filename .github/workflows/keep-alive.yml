@@ -9,8 +9,8 @@ jobs:
   ping-database:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping Supabase Database
+      - name: Test Secret Connection
         run: |
-          curl -X GET "${{ secrets.SUPABASE_URL }}/rest/v1/clubs?select=id&limit=1" \
-          -H "apikey: ${{ secrets.SUPABASE_KEY }}" \
-          -H "Authorization: Bearer ${{ secrets.SUPABASE_KEY }}"
+          if [ -z "${{ secrets.SUPABASE_URL }}" ]; then echo "ERROR: URL is completely missing!"; else echo "URL is detected!"; fi
+      - name: Ping Supabase Database
+        run: curl -X GET "${{ secrets.SUPABASE_URL }}/rest/v1/clubs?select=id&limit=1" -H "apikey: ${{ secrets.SUPABASE_KEY }}" -H "Authorization: Bearer ${{ secrets.SUPABASE_KEY }}"
