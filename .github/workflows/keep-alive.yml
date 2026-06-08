@@ -8,9 +8,12 @@ on:
 jobs:
   ping-database:
     runs-on: ubuntu-latest
+    env:
+      DB_URL: https://${{ secrets.SUPABASE_URL }}
+      DB_KEY: ${{ secrets.SUPABASE_KEY }}
     steps:
-      - name: Test Secret Connection
-        run: |
-          if [ -z "${{ secrets.SUPABASE_URL }}" ]; then echo "ERROR: URL is completely missing!"; else echo "URL is detected!"; fi
       - name: Ping Supabase Database
-        run: curl -X GET "${{ secrets.SUPABASE_URL }}/rest/v1/clubs?select=id&limit=1" -H "apikey: ${{ secrets.SUPABASE_KEY }}" -H "Authorization: Bearer ${{ secrets.SUPABASE_KEY }}"
+        run: |
+          curl -X GET "$DB_URL/rest/v1/clubs?select=id&limit=1" \
+          -H "apikey: $DB_KEY" \
+          -H "Authorization: Bearer $DB_KEY"
